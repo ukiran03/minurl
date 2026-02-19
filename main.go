@@ -1,9 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
@@ -11,7 +12,7 @@ import (
 
 // Use a struct to group the map and a mutex for thread safety
 type Map struct {
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	links map[string]string
 }
 
@@ -23,7 +24,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/addLink", addLinkHandler)
 	mux.HandleFunc("/shorten/", getLinkHandler)
-
+	mux.HandleFunc("/", homeHandler)
 	log.Fatal(http.ListenAndServe(":9000", mux))
 }
 
@@ -33,10 +34,8 @@ func addLinkHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing 'link' query parameter", http.StatusBadRequest)
 		return
 	}
-
 	db.mu.Lock()
-	// Generate a simple 4-character hex string for the toy example
-	shortID := fmt.Sprintf("%x", rand.Intn(0xFFFF))
+	shortID := randomID()
 	db.links[shortID] = url
 	db.mu.Unlock()
 
@@ -49,9 +48,9 @@ func getLinkHandler(w http.ResponseWriter, r *http.Request) {
 	// Extract the ID by trimming the prefix
 	id := strings.TrimPrefix(r.URL.Path, "/shorten/")
 
-	db.mu.Lock()
+	db.mu.RLock()
 	originalURL, exists := db.links[id]
-	db.mu.Unlock()
+	db.mu.RUnlock()
 
 	if !exists {
 		http.NotFound(w, r)
@@ -59,4 +58,12 @@ func getLinkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, originalURL, http.StatusFound)
+}
+
+func randomID() string {
+	b := make([]byte, 4) // 4 bytes = 8 hex characters
+	if _, err := rand.Read(b); err != nil {
+		return "00000000" // TODO: handle error
+	}
+	return hex.EncodeToString(b)
 }
