@@ -1,1 +1,10 @@
 /_ref/
+ui/assets/css/output.css
+ui/assets/css/sources.generated.css
+*_templ.go
+/node_modules/
+/package.json
+/pnpm-lock.yaml
+/tls/
+/ui/fonts/
+/ui/assets/img/

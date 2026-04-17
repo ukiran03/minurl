@@ -1,0 +1,26 @@
+package pages
+
+import (
+	"ukiran.com/minurl/ui/html/layouts"
+	"ukiran.com/minurl/ui/html/partials"
+	"ukiran.com/minurl/internal/models"
+)
+
+templ HomePage(title, message string, murls []models.MinUrl) {
+	// @layouts.Base("Home - MinUrls", URLList(murls))
+	@layouts.Base("Home - MinUrls", partials.URLTable(murls))
+}
+
+templ URLList(urls []models.MinUrl) {
+	<section class="max-w-4xl mx-auto mt-12">
+		<div class="flex items-center justify-between mb-6">
+			<h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-100">Latest Links</h2>
+			<span class="text-xs text-zinc-500 font-medium uppercase tracking-widest">Recent 10</span>
+		</div>
+		<div class="space-y-3">
+			for _, u := range urls {
+				@partials.URLItem(u.Name, u.Slug, u.URL)
+			}
+		</div>
+	</section>
+}

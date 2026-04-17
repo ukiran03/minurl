@@ -1,0 +1,77 @@
+package partials
+
+import (
+	"github.com/templui/templui/components/table"
+	"ukiran.com/minurl/internal/models"
+)
+
+// As a card
+templ URLItem(name, short, long string) {
+	<div class="group p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:border-blue-500/50 transition-all shadow-sm">
+		<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+			<div class="flex-1 min-w-0">
+				<div class="flex items-center gap-2 mb-1">
+					<h3 class="font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+						{ name }
+					</h3>
+					<span class="text-[10px] px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 font-medium">
+						0 clicks
+					</span>
+				</div>
+				<p class="text-sm text-zinc-500 dark:text-zinc-400 truncate font-mono">
+					{ long }
+				</p>
+			</div>
+			<div class="flex items-center gap-3">
+				<div class="flex flex-col items-end">
+					<a href={ templ.SafeURL(short) } target="_blank" class="text-blue-500 hover:text-blue-600 font-medium text-sm flex items-center gap-1">
+						{ short }
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+						</svg>
+					</a>
+				</div>
+				<button class="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+templ URLTable(murls []models.MinUrl) {
+	<div class="rounded-md border border-zinc-200 dark:border-zinc-800 bg-card overflow-hidden">
+		@table.Table(table.Props{Class: "w-full text-sm"}) {
+			@table.Header() {
+				@table.Row() {
+					@table.Head() {
+						Name
+					}
+					@table.Head() {
+						Slug
+					}
+					@table.Head() {
+						Original URL
+					}
+				}
+			}
+			@table.Body() {
+				for _, u := range murls {
+					@table.Row() {
+						@table.Cell() {
+							{ u.Name }
+						}
+						@table.Cell() {
+							<a href={ templ.SafeURL("/" + u.Slug) } class="inline-block bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors font-mono">/{ u.Slug } </a>
+						}
+						@table.Cell() {
+							{ u.URL }
+						}
+					}
+				}
+			}
+		}
+	</div>
+}
