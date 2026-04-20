@@ -42,7 +42,7 @@ func main() {
 
 	app := application{
 		logger:   logger,
-		murls:    &models.MinUrlModel{Pool: pool, Ctx: ctx},
+		murls:    &models.MinUrlModel{Pool: pool},
 		users:    &models.UserModel{Pool: pool, Ctx: ctx},
 		clickEvs: &models.ClickEvModel{Pool: pool, Ctx: ctx},
 	}

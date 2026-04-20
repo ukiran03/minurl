@@ -22,16 +22,15 @@ type MinUrl struct {
 
 type MinUrlModel struct {
 	Pool *pgxpool.Pool
-	Ctx  context.Context // TODO: ctx should not be in a struct, pass as a arg
 }
 
-func (m *MinUrlModel) Latest() ([]MinUrl, error) {
+func (m *MinUrlModel) Latest(ctx context.Context) ([]MinUrl, error) {
 	stmt := `SELECT slug, COALESCE(name, slug) AS name, url,
              owner_id, created_at, expires_at, is_custom
              FROM minurls ORDER BY created_at DESC
              LIMIT 10`
 
-	rows, err := m.Pool.Query(m.Ctx, stmt)
+	rows, err := m.Pool.Query(ctx, stmt)
 	if err != nil {
 		return nil, fmt.Errorf("querying latest urls: %w", err)
 	}

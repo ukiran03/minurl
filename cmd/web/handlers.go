@@ -9,7 +9,7 @@ import (
 )
 
 func (app *application) home(w http.ResponseWriter, r *http.Request) {
-	murls, err := app.murls.Latest()
+	murls, err := app.murls.Latest(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
 		return
