@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lmittmann/tint"
 
 	"ukiran.com/minurl/internal/models"
 )
@@ -30,7 +31,18 @@ func main() {
 	)
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(tint.NewHandler(os.Stderr, &tint.Options{
+		Level:      slog.LevelDebug,
+		TimeFormat: time.Kitchen,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Value.Kind() == slog.KindAny {
+				if _, ok := a.Value.Any().(error); ok {
+					return tint.Attr(9, a)
+				}
+			}
+			return a
+		},
+	}))
 
 	ctx := context.Background()
 	pool, err := openDB(ctx, *dsn)

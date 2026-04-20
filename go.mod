@@ -6,6 +6,7 @@ require (
 	github.com/a-h/templ v0.3.1001
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
+	github.com/lmittmann/tint v1.1.3
 	github.com/templui/templui v1.9.6
 )
 
