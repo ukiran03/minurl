@@ -50,6 +50,7 @@ CREATE TRIGGER trigger_users_updated_at
 -- name: urls
 CREATE TABLE minurls (
     slug        VARCHAR(255) COLLATE "C" NOT NULL,   -- still use "C" collation for speed
+    name        VARCHAR(255),                        -- Added: Human-readable title
     url         TEXT NOT NULL,
     owner_id    UUID,                                 -- nullable for anonymous links
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -70,6 +71,11 @@ CREATE INDEX idx_minurls_created
 CREATE INDEX idx_minurls_expires
     ON minurls (expires_at)
     WHERE expires_at IS NOT NULL;
+
+-- Index for searching by name
+CREATE INDEX idx_minurls_name
+    ON minurls (name)
+    WHERE name IS NOT NULL;
 
 
 -- name: click_events

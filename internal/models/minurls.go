@@ -11,8 +11,8 @@ import (
 )
 
 type MinUrl struct {
-	Name      string             `db:""`
 	Slug      string             `db:"slug"`
+	Name      string             `db:"name"`
 	URL       string             `db:"url"`
 	OwnerID   pgtype.UUID        `db:"owner_id"`
 	CreatedAt time.Time          `db:"created_at"`
@@ -26,17 +26,18 @@ type MinUrlModel struct {
 }
 
 func (m *MinUrlModel) Latest() ([]MinUrl, error) {
-	stmt := `SELECT slug, url, owner_id, created_at, expires_at, is_custom
+	stmt := `SELECT slug, COALESCE(name, slug) AS name, url,
+             owner_id, created_at, expires_at, is_custom
              FROM minurls ORDER BY created_at DESC
              LIMIT 10`
 
 	rows, err := m.Pool.Query(m.Ctx, stmt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying latest urls: %w", err)
 	}
 	murls, err := pgx.CollectRows(rows, pgx.RowToStructByName[MinUrl])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("collecting rows: %w", err)
 	}
 	return murls, nil
 }

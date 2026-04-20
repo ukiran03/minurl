@@ -29,21 +29,25 @@ RETURNING id, created_at;
 
 -- name: minurls
 -- Auto-generated slug by Alice
-INSERT INTO minurls (slug, url, owner_id, is_custom, expires_at)
-VALUES ('gK9pQ2', 'https://www.youtube.com/watch?v=dQw4w9wgxcq',
+INSERT INTO minurls (slug, name, url, owner_id, is_custom, expires_at)
+VALUES ('gK9pQ2','Never Gonna Give You Up',
+        'https://www.youtube.com/watch?v=dQw4w9wgxcq',
         '9aa128c0-3e8f-4a95-b0df-3f6ee589c653', FALSE, NULL);
 
 -- Custom slug by Bob
-INSERT INTO minurls (slug, url, owner_id, is_custom, expires_at)
-VALUES ('my-portfolio', 'https://bobpatel.in',
+INSERT INTO minurls (slug, name, url, owner_id, is_custom, expires_at)
+VALUES ('my-portfolio','Personal Portfolio', 'https://bobpatel.in',
         '3dd9a426-7839-4ba7-8cb2-2166aa39f529', TRUE, '2027-12-31 23:59:59');
 
 -- Temporary link (expires soon)
-INSERT INTO minurls (slug, url, owner_id, is_custom, expires_at)
-VALUES ('temp-promo', 'https://example.com/big-sale-2026',
+INSERT INTO minurls (slug, name, url, owner_id, is_custom, expires_at)
+VALUES ('temp-promo','Flash Sale - April 2026', 'https://example.com/big-sale-2026',
         '9aa128c0-3e8f-4a95-b0df-3f6ee589c653', TRUE, now() + interval '7 days');
 
 -- Anonymous link (no owner)
-INSERT INTO minurls (slug, url, owner_id, is_custom, expires_at)
-VALUES ('funny-cat', 'https://catmemes.com/funny-video',
+INSERT INTO minurls (slug, name, url, owner_id, is_custom, expires_at)
+VALUES ('funny-cat','Funny Cat Video', 'https://catmemes.com/funny-video',
         NULL, FALSE, NULL);
+
+INSERT INTO minurls (slug, name, url, owner_id, is_custom)
+VALUES ('dev-docs', 'Project Documentation', 'https://docs.internal.com', NULL, TRUE);
