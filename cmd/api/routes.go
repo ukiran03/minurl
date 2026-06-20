@@ -16,5 +16,5 @@ func (app *application) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/minurls", app.createMinurlHandler)
 	router.HandlerFunc(http.MethodGet, "/r/:slug", app.redirectHandler)
 
-	return router
+	return app.recoverPanic(router)
 }
