@@ -29,7 +29,8 @@ func main() {
 		"Environment (development|staging|production)")
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	// logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := NewLogger()
 
 	app := &application{
 		config: cfg,
