@@ -11,8 +11,10 @@ func (app *application) readSlugParam(r *http.Request) string {
 	return httprouter.ParamsFromContext(r.Context()).ByName("slug")
 }
 
+type envelope map[string]any
+
 func (app *application) writeJSON(
-	w http.ResponseWriter, status int, data any, headers http.Header,
+	w http.ResponseWriter, status int, data envelope, headers http.Header,
 ) error {
 	js, err := json.Marshal(data)
 	if err != nil {
