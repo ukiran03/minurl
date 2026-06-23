@@ -4,17 +4,19 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"ukiran.com/minurl/internal/data"
 )
 
 // POST /v1/shorten
 func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "create a new minurl")
+	slug := chi.URLParam(r, "slug")
+	fmt.Fprintf(w, "create a new minurl for %s", slug)
 }
 
 // GET /{slug}
 func (app *application) redirectHandler(w http.ResponseWriter, r *http.Request) {
-	slug := app.readSlugParam(r)
+	slug := chi.URLParam(r, "slug")
 
 	longURL, exists := data.UrlDatabase[slug]
 	if !exists {
@@ -31,10 +33,13 @@ func (app *application) redirectHandler(w http.ResponseWriter, r *http.Request) 
 
 // GET /v1/minurls/{slug}
 func (app *application) getMinurlHandler(w http.ResponseWriter, r *http.Request) {
-	return
+	slug := chi.URLParam(r, "slug")
+	fmt.Fprintf(w, "get the URL for %s", slug)
 }
 
 // DELETE /v1/minurls/{slug}
 func (app *application) deleteMinurlHandler(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	fmt.Fprintf(w, "delete the minURL %s", slug)
 	return
 }

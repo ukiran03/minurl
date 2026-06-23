@@ -19,6 +19,7 @@ func (app *application) routes() http.Handler {
 
 	// BRANCH 2: The API Group
 	r.Route("/v1", func(r chi.Router) {
+		r.Get("/healthcheck", app.healthcheckHandler)
 		r.Post("/shorten", app.createMinurlHandler) // -> POST /v1/shorten
 
 		// SUB-BRANCH 3: Protected URL Management

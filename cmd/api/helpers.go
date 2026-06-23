@@ -3,13 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/julienschmidt/httprouter"
 )
-
-func (app *application) readSlugParam(r *http.Request) string {
-	return httprouter.ParamsFromContext(r.Context()).ByName("slug")
-}
 
 type envelope map[string]any
 
