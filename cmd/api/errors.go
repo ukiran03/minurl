@@ -44,7 +44,9 @@ func (app *application) errorResponse(
 // message, then uses the errorResponse() helper to send a 500 Internal Server
 // Error status code and JSON response (containing a generic error message) to
 // the client.
-func (app *application) serverErrorResponse(w http.ResponseWriter, r *http.Request, err error) {
+func (app *application) serverErrorResponse(
+	w http.ResponseWriter, r *http.Request, err error,
+) {
 	app.logError(r, err)
 
 	message := "the server encountered a problem and could not process your request"

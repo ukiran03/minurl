@@ -3,18 +3,30 @@ package main
 import (
 	"net/http"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/go-chi/chi/v5"
 )
 
 func (app *application) routes() http.Handler {
-	router := httprouter.New()
+	r := chi.NewRouter()
 
-	router.NotFound = http.HandlerFunc(app.notFoundResponse)
-	router.MethodNotAllowed = http.HandlerFunc(app.methodNotAllowedResponse)
+	r.Use(app.recoverPanic)
 
-	router.HandlerFunc(http.MethodGet, "/v1/healthcheck", app.healthcheckHandler)
-	router.HandlerFunc(http.MethodPost, "/v1/minurls", app.createMinurlHandler)
-	router.HandlerFunc(http.MethodGet, "/r/:slug", app.redirectHandler)
+	r.NotFound(app.notFoundResponse)
+	r.MethodNotAllowed(app.methodNotAllowedResponse)
 
-	return app.recoverPanic(router)
+	// BRANCH 1: Global public redirect (No heavy middleware)
+	r.Get("/{slug}", app.redirectHandler)
+
+	// BRANCH 2: The API Group
+	r.Route("/v1", func(r chi.Router) {
+		r.Post("/shorten", app.createMinurlHandler) // -> POST /v1/shorten
+
+		// SUB-BRANCH 3: Protected URL Management
+		r.Route("/minurls/{slug}", func(r chi.Router) {
+			r.Get("/", app.getMinurlHandler)       // -> GET /v1/minurls/{slug}
+			r.Delete("/", app.deleteMinurlHandler) // -> DELETE /v1/minurls/{slug}
+		})
+	})
+
+	return r
 }
