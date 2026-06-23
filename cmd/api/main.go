@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"ukiran.com/minurl/internal/logger"
 )
 
 const version = "1.0.0"
@@ -29,8 +31,7 @@ func main() {
 		"Environment (development|staging|production)")
 	flag.Parse()
 
-	// logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	logger := NewLogger()
+	logger := logger.NewLogger()
 
 	app := &application{
 		config: cfg,
