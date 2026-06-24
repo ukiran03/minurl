@@ -17,17 +17,52 @@ type Lifespan struct {
 	Expiry  time.Time `json:"expires_at"`
 }
 
+// NewLifespan acts as a domain constructor, isolating time logic and jitter safely
+func NewLifespan(expiryInput *string) (Lifespan, error) {
+	now := time.Now()
+
+	// Fallback logic if the field is missing entirely from the request
+	if expiryInput == nil {
+		return Lifespan{
+			Created: now,
+			Expiry:  now.AddDate(0, 0, 7), // Default 1 week
+		}, nil
+	}
+
+	var expiryTime time.Time
+	durationInput := strings.ToLower(strings.TrimSpace(*expiryInput))
+
+	switch durationInput {
+	case "1d":
+		expiryTime = now.AddDate(0, 0, 1)
+	case "1m":
+		expiryTime = now.AddDate(0, 1, 0)
+	case "1y":
+		expiryTime = now.AddDate(1, 0, 0)
+	case "1w", "":
+		expiryTime = now.AddDate(0, 0, 7)
+	default:
+		return Lifespan{}, ErrInvalidExpiryFormat
+	}
+
+	// High-throughput eviction jitter (1-5 minutes) to smooth out
+	// database/cache cleanup waves
+	jitter := time.Duration(rand.Intn(240)+60) * time.Second
+
+	return Lifespan{
+		Created: now,
+		Expiry:  expiryTime.Add(jitter),
+	}, nil
+}
+
 func (l *Lifespan) UnmarshalJSON(data []byte) error {
-	// define an alias type to prevent infinite recursion duing Unmarshal
-	type Alias Lifespan
-	aux := &struct {
+	// Only extract the "expires_at" as string from the incoming JSON body
+
+	aux := struct {
 		// captures user string "1d", "1w", etc. using pointer string to
 		// reliably detect missing vs empty keys
 		Expiry *string `json:"expires_at"`
-		*Alias
-	}{
-		Alias: (*Alias)(l),
-	}
+	}{}
 
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
