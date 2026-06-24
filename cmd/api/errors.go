@@ -1,8 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+)
+
+var ErrInvalidCustomSlug = errors.New(
+	"invalid slug format. slugs can only contain letters, numbers, hyphens, and underscores, and must be between 8 and 32 characters long",
 )
 
 func (app *application) badRequestResponse(
@@ -71,4 +76,14 @@ func (app *application) notFoundResponse(w http.ResponseWriter, r *http.Request)
 func (app *application) methodNotAllowedResponse(w http.ResponseWriter, r *http.Request) {
 	message := fmt.Sprintf("the %s method is not supported for this resource", r.Method)
 	app.errorResponse(w, r, http.StatusMethodNotAllowed, message)
+}
+
+// Note that the errors parameter here has the type map[string]string, which is
+// exactly the same as the errors map contained in our Validator type.
+func (app *application) failedValidationResponse(
+	w http.ResponseWriter,
+	r *http.Request,
+	errors map[string]string,
+) {
+	app.errorResponse(w, r, http.StatusUnprocessableEntity, errors)
 }
