@@ -6,12 +6,11 @@ import (
 
 // The Request Data Transfer Object (DTO)
 type minurlRequestDTO struct {
-	Slug     string  `json:"slug,omitzero"`
-	URL      string  `json:"url"`
-	Title    *string `json:"title,omitzero"`
-	IsCustom bool    `json:"is_custom"`
-	Expiry   *string `json:"expires_at"`
-	UserID   *int64  `json:"user_id,omitzero"`
+	Slug   *string `json:"slug,omitzero"`
+	URL    string  `json:"url"`
+	Title  *string `json:"title,omitzero"`
+	Expiry *string `json:"expires_at"`
+	UserID *int64  `json:"user_id,omitzero"`
 }
 
 func (req *minurlRequestDTO) Validate(v *validator.Validator) {
@@ -22,11 +21,15 @@ func (req *minurlRequestDTO) Validate(v *validator.Validator) {
 		"url", "must be between 11 and 2048 characters long",
 	)
 
-	// Slug validation
-	if req.IsCustom {
-		v.Check(len(req.Slug) >= 8 && len(req.Slug) <= 100,
+	isCustom := (req.Slug != nil) && (*req.Slug != "")
+
+	// Custom slug validation (if any)
+	if isCustom {
+		slugVal := *req.Slug
+		slugLen := len(slugVal)
+		v.Check(slugLen >= 8 && slugLen <= 100,
 			"custom slug", "must be between 8 and 100 characters long")
-		v.Check(validator.Matches(req.Slug, validator.SlugRegex),
+		v.Check(validator.Matches(slugVal, validator.SlugRegex),
 			"custom slug", ErrInvalidCustomSlug.Error())
 	}
 
@@ -37,7 +40,10 @@ func (req *minurlRequestDTO) Validate(v *validator.Validator) {
 	}
 
 	// UserID validation
-	if req.UserID != nil {
+	if isCustom && req.UserID == nil {
+		v.AddError("user_id", "custom_slug provider must be a valid user")
+	} else if req.UserID != nil {
+		// Only checks if req.UserID actually holds a pointer
 		v.Check(*req.UserID > 0, "user_id", "must be a valid positive integer")
 	}
 }

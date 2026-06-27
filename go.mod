@@ -5,6 +5,7 @@ go 1.26.4
 require github.com/lmittmann/tint v1.1.3
 
 require (
+	github.com/bwmarrin/snowflake v0.3.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/jackc/pgx/v5 v5.10.0
 )

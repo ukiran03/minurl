@@ -61,7 +61,7 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 	headers := make(http.Header)
 	headers.Set("Location", fmt.Sprintf("/v1/%s", minurl.Slug))
 
-	err = app.writeJSON(w, http.StatusCreated, envelope{"movie": minurl}, headers)
+	err = app.writeJSON(w, http.StatusCreated, envelope{"minurl": minurl}, headers)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
