@@ -2,7 +2,7 @@ package data
 
 import (
 	"errors"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"time"
 )
@@ -18,13 +18,13 @@ type Lifespan struct {
 
 // NewLifespan acts as a domain constructor, isolating time logic and jitter safely
 func NewLifespan(expiryInput *string) (Lifespan, error) {
-	now := time.Now()
+	now := time.Now().UTC()
 
 	// Fallback logic if the field is missing entirely from the request
 	if expiryInput == nil {
 		return Lifespan{
 			Created: now,
-			Expiry:  now.AddDate(0, 0, 7), // Default 1 week
+			Expiry:  now.AddDate(0, 0, 7), // TODO: Default 1 week (make a var),
 		}, nil
 	}
 
@@ -46,7 +46,7 @@ func NewLifespan(expiryInput *string) (Lifespan, error) {
 
 	// High-throughput eviction jitter (1-5 minutes) to smooth out
 	// database/cache cleanup waves
-	jitter := time.Duration(rand.Intn(240)+60) * time.Second
+	jitter := time.Duration(rand.IntN(240)+60) * time.Second
 
 	return Lifespan{
 		Created: now,
