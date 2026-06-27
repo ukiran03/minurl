@@ -2,54 +2,34 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"ukiran.com/minurl/internal/config"
+	"ukiran.com/minurl/internal/data"
 	"ukiran.com/minurl/internal/logger"
 )
 
 const version = "1.0.0"
 
-type config struct {
-	port int
-	env  string
-	db   struct {
-		dsn          string
-		maxOpenConns int
-		maxIdleConns int
-		maxIdleTime  time.Duration
-	}
-}
-
 type application struct {
-	config config
+	config *config.Config
 	logger *slog.Logger
+	models data.Models
 }
 
 func main() {
-	var cfg config
-
-	flag.IntVar(&cfg.port, "port", 4000, "API server port")
-	flag.StringVar(&cfg.env, "env", "development",
-		"Environment (development|staging|production)")
-	flag.StringVar(
-		&cfg.db.dsn, "db-dsn",
-		os.Getenv("MINURL_DB_DSN"), "PostgreSQL DSN")
-	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns",
-		25, "PostgreSQL max open connections")
-	flag.IntVar(&cfg.db.maxIdleConns, "db-max-idle-conns",
-		25, "PostgreSQL max idle connections")
-	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time",
-		2*time.Minute, "PostgreSQL max connection idle time")
-
-	flag.Parse()
-
 	logger := logger.NewLogger()
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Initialization error: %v", err)
+	}
 
 	db, err := openDB(cfg)
 	if err != nil {
@@ -62,10 +42,13 @@ func main() {
 	app := &application{
 		config: cfg,
 		logger: logger,
+		models: data.NewModels(
+			db, cfg.SFNode,
+		),
 	}
 
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.port),
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      app.routes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  5 * time.Second,
@@ -73,21 +56,21 @@ func main() {
 		ErrorLog:     slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 
-	logger.Info("starting server", "addr", srv.Addr, "env", cfg.env)
+	logger.Info("starting server", "addr", srv.Addr, "env", cfg.Env)
 	err = srv.ListenAndServe()
 	logger.Error(err.Error())
 	os.Exit(1)
 }
 
-func openDB(cfg config) (*pgxpool.Pool, error) {
-	poolCfg, err := pgxpool.ParseConfig(cfg.db.dsn)
+func openDB(cfg *config.Config) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(cfg.DB.DSN)
 	if err != nil {
 		return nil, err
 	}
 
-	poolCfg.MaxConns = int32(cfg.db.maxOpenConns)
-	poolCfg.MinConns = int32(cfg.db.maxIdleConns)
-	poolCfg.MaxConnIdleTime = cfg.db.maxIdleTime
+	poolCfg.MaxConns = int32(cfg.DB.MaxOpenConns)
+	poolCfg.MinConns = int32(cfg.DB.MaxIdleConns)
+	poolCfg.MaxConnIdleTime = cfg.DB.MaxIdleTime
 	poolCfg.HealthCheckPeriod = 1 * time.Minute
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
