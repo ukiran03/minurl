@@ -1,5 +1,5 @@
 CREATE TABLE custom_minurls (
-    custom_slug VARCHAR(64) NOT NULL,
+    slug VARCHAR(64) NOT NULL,
     url         TEXT NOT NULL,
     title       VARCHAR(255) NULL,
 
@@ -8,12 +8,12 @@ CREATE TABLE custom_minurls (
 
     user_id     BIGINT NOT NULL,
 
-    CONSTRAINT pk_custom_minurls PRIMARY KEY (custom_slug)
+    CONSTRAINT pk_custom_minurls PRIMARY KEY (slug)
 );
 
 -- Covering index for custom redirect paths (Index-Only Scan)
 CREATE INDEX idx_custom_redirect_covering
-  ON custom_minurls (custom_slug)
+  ON custom_minurls (slug)
   INCLUDE (url, expires_at);
 
 -- Partial index for background TTL deletion workers on custom links
