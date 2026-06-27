@@ -21,6 +21,8 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 	v := validator.New()
 	input.Validate(v)
 
+	isCustom := (input.Slug != nil) && (*input.Slug != "")
+
 	lifespan, err := data.NewLifespan(input.Expiry)
 	if err != nil {
 		v.AddError("expires_at", err.Error())
@@ -30,18 +32,39 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Map the DTO directly into your Clean Domain Struct
-	minurl := data.MinUrl{
-		Slug:     input.Slug,
-		URL:      input.URL,
-		Title:    input.Title,
-		IsCustom: input.IsCustom,
-		UserID:   input.UserID,
-		Life:     lifespan,
+	var minurl *data.MinUrl
+
+	if isCustom {
+		minurl = &data.MinUrl{
+			Slug:   *input.Slug, // custom slug
+			URL:    input.URL,
+			Title:  input.Title,
+			UserID: input.UserID,
+			Life:   lifespan,
+		}
+		err = app.models.MinUrls.InsertCustom(r.Context(), minurl)
+	} else {
+		minurl = &data.MinUrl{
+			URL:    input.URL,
+			Title:  input.Title,
+			UserID: input.UserID,
+			Life:   lifespan,
+		}
+		err = app.models.MinUrls.Insert(r.Context(), minurl)
 	}
 
-	// Now you can pass `minurl` directly to your database insert function!
-	fmt.Fprintf(w, "%+v\n", minurl)
+	if err != nil { // Error from Insert
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	headers := make(http.Header)
+	headers.Set("Location", fmt.Sprintf("/v1/%s", minurl.Slug))
+
+	err = app.writeJSON(w, http.StatusCreated, envelope{"movie": minurl}, headers)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
 }
 
 // GET /{slug}
@@ -55,11 +78,10 @@ func (app *application) getMinurlHandler(w http.ResponseWriter, r *http.Request)
 	slug := chi.URLParam(r, "slug")
 
 	minurl := data.MinUrl{
-		Slug:     slug,
-		URL:      "https://example.com",
-		Title:    new("Example"),
-		IsCustom: false,
-		UserID:   new(int64(1)),
+		Slug:   slug,
+		URL:    "https://example.com",
+		Title:  new("Example"),
+		UserID: new(int64(1)),
 
 		Life: data.Lifespan{
 			Created: time.Now(),
