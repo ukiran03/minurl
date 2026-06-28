@@ -76,28 +76,24 @@ func (m MinUrlModel) executeInsert(
 }
 
 // GetMinUrl will just give the URL to redirect
-func (m MinUrlModel) GetMinUrl(
-	ctx context.Context, slug, userID string,
-) (string, error) {
+func (m MinUrlModel) GetMinUrl(ctx context.Context, slug string) (string, error) {
 	snowflake, err := ParseBase62(slug)
 	if err != nil {
 		return "", err
 	}
-	query := `SELECT url FROM minurls WHERE slug = $1 AND user_id = $2`
-	return m.executeGetMinUrl(ctx, query, snowflake, userID)
+	query := `SELECT url FROM minurls WHERE slug = $1`
+	return m.executeGetMinUrl(ctx, query, snowflake)
 }
 
-func (m MinUrlModel) GetMinUrlCustom(
-	ctx context.Context, slug, userID string,
-) (string, error) {
-	query := `SELECT url FROM custom_minurls WHERE slug = $1 AND user_id = $2`
-	return m.executeGetMinUrl(ctx, query, slug, userID)
+func (m MinUrlModel) GetMinUrlCustom(ctx context.Context, slug string) (string, error) {
+	query := `SELECT url FROM custom_minurls WHERE slug = $1`
+	return m.executeGetMinUrl(ctx, query, slug)
 }
 
 func (m MinUrlModel) executeGetMinUrl(
-	ctx context.Context, query string, slug any, userID string,
+	ctx context.Context, query string, slug any,
 ) (string, error) {
-	params := []any{slug, userID}
+	params := []any{slug}
 
 	ctx, cancel := context.WithTimeout(ctx, m.TTL)
 	defer cancel()
