@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -14,7 +15,7 @@ import (
 var ErrDuplicateSlug = errors.New("duplicate slug")
 
 type MinUrl struct {
-	Slug   string   `json:"slug"` // Holds "9Gf3xZ" (Base58) OR "my-custom-slug"
+	Slug   string   `json:"slug"` // Holds "9Gf3xZ" (Base62) OR "my-custom-slug"
 	URL    string   `json:"url"`
 	Title  *string  `json:"title,omitzero"`
 	UserID *int64   `json:"user_id,omitzero"`
@@ -31,16 +32,12 @@ func (m MinUrlModel) Insert(ctx context.Context, minurl *MinUrl) error {
 	query := `INSERT INTO minurls (slug, url, title, user_id, created_at, expires_at)
 	          VALUES ($1, $2, $3, $4, $5, $6)`
 
-	snowflakeID := NewSnowflakeID(m.SFNID)
-	if err := m.execute(ctx, query, snowflakeID, minurl); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return ErrDuplicateSlug
-		}
+	snowflake := NewFlake(m.SFNID)
+	if err := m.executeInsert(ctx, query, snowflake, minurl); err != nil {
 		return err
 	}
-	// Mutate the struct Convert that int64 to Base58 string
-	minurl.Slug = snowflakeID.Base58()
+	// Mutate the struct Convert that int64 to Base62 string
+	minurl.Slug = snowflake.Base62()
 	return nil
 }
 
@@ -52,20 +49,12 @@ func (m MinUrlModel) InsertCustom(ctx context.Context, minurl *MinUrl) error {
 	query := `INSERT INTO custom_minurls
               (slug, url, title, user_id, created_at, expires_at)
               VALUES ($1, $2, $3, $4, $5, $6)`
-
-	if err := m.execute(ctx, query, minurl.Slug, minurl); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return ErrDuplicateSlug
-		}
-		return err
-	}
-	return nil
+	return m.executeInsert(ctx, query, minurl.Slug, minurl)
 }
 
-func (m MinUrlModel) execute(
+func (m MinUrlModel) executeInsert(
 	ctx context.Context, query string,
-	slug interface{}, minurl *MinUrl,
+	slug any, minurl *MinUrl,
 ) error {
 	params := []any{
 		slug,
@@ -76,7 +65,52 @@ func (m MinUrlModel) execute(
 	defer cancel()
 
 	_, err := m.DB.Exec(ctx, query, params...)
-	return err
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return ErrDuplicateSlug
+		}
+		return err
+	}
+	return nil
+}
+
+// GetMinUrl will just give the URL to redirect
+func (m MinUrlModel) GetMinUrl(
+	ctx context.Context, slug, userID string,
+) (string, error) {
+	snowflake, err := ParseBase62(slug)
+	if err != nil {
+		return "", err
+	}
+	query := `SELECT url FROM minurls WHERE slug = $1 AND user_id = $2`
+	return m.executeGetMinUrl(ctx, query, snowflake, userID)
+}
+
+func (m MinUrlModel) GetMinUrlCustom(
+	ctx context.Context, slug, userID string,
+) (string, error) {
+	query := `SELECT url FROM custom_minurls WHERE slug = $1 AND user_id = $2`
+	return m.executeGetMinUrl(ctx, query, slug, userID)
+}
+
+func (m MinUrlModel) executeGetMinUrl(
+	ctx context.Context, query string, slug any, userID string,
+) (string, error) {
+	params := []any{slug, userID}
+
+	ctx, cancel := context.WithTimeout(ctx, m.TTL)
+	defer cancel()
+
+	var url string
+	err := m.DB.QueryRow(ctx, query, params...).Scan(&url)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrRecordNotFound
+		}
+		return "", err
+	}
+	return url, nil
 }
 
 func (m MinUrlModel) Get(slug string) error {
