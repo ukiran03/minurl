@@ -21,35 +21,30 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 	v := validator.New()
 	input.Validate(v)
 
-	isCustom := (input.Slug != nil) && (*input.Slug != "")
-
 	lifespan, err := data.NewLifespan(input.Expiry)
 	if err != nil {
 		v.AddError("expires_at", err.Error())
 	}
+
 	if !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	var minurl *data.MinUrl
+	// Base model initialization
+	minurl := &data.MinUrl{
+		URL:    input.URL,
+		Title:  input.Title,
+		UserID: input.UserID,
+		Life:   lifespan,
+	}
+
+	isCustom := (input.Slug != nil) && (*input.Slug != "")
 
 	if isCustom {
-		minurl = &data.MinUrl{
-			Slug:   *input.Slug, // custom slug
-			URL:    input.URL,
-			Title:  input.Title,
-			UserID: input.UserID,
-			Life:   lifespan,
-		}
+		minurl.Slug = *input.Slug
 		err = app.models.MinUrls.InsertCustom(r.Context(), minurl)
 	} else {
-		minurl = &data.MinUrl{
-			URL:    input.URL,
-			Title:  input.Title,
-			UserID: input.UserID,
-			Life:   lifespan,
-		}
 		err = app.models.MinUrls.Insert(r.Context(), minurl)
 	}
 

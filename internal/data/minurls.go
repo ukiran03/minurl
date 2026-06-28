@@ -2,11 +2,16 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrDuplicateSlug = errors.New("duplicate slug")
 
 type MinUrl struct {
 	Slug   string   `json:"slug"` // Holds "9Gf3xZ" (Base58) OR "my-custom-slug"
@@ -28,6 +33,10 @@ func (m MinUrlModel) Insert(ctx context.Context, minurl *MinUrl) error {
 
 	snowflakeID := NewSnowflakeID(m.SFNID)
 	if err := m.execute(ctx, query, snowflakeID, minurl); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return ErrDuplicateSlug
+		}
 		return err
 	}
 	// Mutate the struct Convert that int64 to Base58 string
@@ -44,7 +53,14 @@ func (m MinUrlModel) InsertCustom(ctx context.Context, minurl *MinUrl) error {
               (slug, url, title, user_id, created_at, expires_at)
               VALUES ($1, $2, $3, $4, $5, $6)`
 
-	return m.execute(ctx, query, minurl.Slug, minurl)
+	if err := m.execute(ctx, query, minurl.Slug, minurl); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return ErrDuplicateSlug
+		}
+		return err
+	}
+	return nil
 }
 
 func (m MinUrlModel) execute(
