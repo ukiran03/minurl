@@ -109,10 +109,35 @@ func (m MinUrlModel) executeGetMinUrl(
 	return url, nil
 }
 
-func (m MinUrlModel) Get(slug string) error {
+func (m MinUrlModel) DeleteMinUrl(ctx context.Context, slug string) error {
+	snowflake, err := ParseBase62(slug)
+	if err != nil {
+		return err
+	}
+	query := `DELETE FROM minurls WHERE slug = $1`
+	return m.executeDelete(ctx, query, snowflake)
+}
+
+func (m MinUrlModel) DeleteMinUrlCustom(ctx context.Context, slug string) error {
+	query := `DELETE FROM custom_minurls WHERE slug = $1`
+	return m.executeDelete(ctx, query, slug)
+}
+
+func (m MinUrlModel) executeDelete(ctx context.Context, query string, slug any) error {
+	ctx, cancel := context.WithTimeout(ctx, m.TTL)
+	defer cancel()
+
+	result, err := m.DB.Exec(ctx, query, slug)
+	if err != nil {
+		return err
+	}
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return ErrRecordNotFound
+	}
 	return nil
 }
 
-func (m MinUrlModel) Delete(slug string) error {
+func (m MinUrlModel) Get(ctx context.Context, slug string) error {
 	return nil
 }

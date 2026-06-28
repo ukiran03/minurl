@@ -112,5 +112,31 @@ func (app *application) getMinurlHandler(w http.ResponseWriter, r *http.Request)
 // DELETE /v1/minurls/{slug}
 func (app *application) deleteMinurlHandler(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	fmt.Fprintf(w, "delete the minURL %s", slug)
+	if slug == "" {
+		app.notFoundResponse(w, r)
+		return
+	}
+	var err error
+	_, parseErr := data.ParseBase62(slug)
+	if parseErr != nil {
+		err = app.models.MinUrls.DeleteMinUrlCustom(r.Context(), slug)
+	} else {
+		err = app.models.MinUrls.DeleteMinUrl(r.Context(), slug)
+	}
+
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK,
+		envelope{"message": "minurl successfully deleted"}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
 }
