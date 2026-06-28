@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -33,7 +34,7 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 
 	// Base model initialization
 	minurl := &data.MinUrl{
-		URL:    input.URL,
+		URL:    sanitizeUrl(input.URL),
 		Title:  input.Title,
 		UserID: input.UserID,
 		Life:   lifespan,
@@ -65,7 +66,25 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 // GET /{slug}
 func (app *application) redirectHandler(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	fmt.Fprintf(w, "%s", slug)
+	if slug == "" {
+		app.notFoundResponse(w, r)
+		return
+	}
+	var url string
+	var err error
+
+	_, parseErr := data.ParseBase62(slug)
+	if parseErr != nil {
+		url, err = app.models.MinUrls.GetMinUrlCustom(r.Context(), slug)
+	} else {
+		url, err = app.models.MinUrls.GetMinUrl(r.Context(), slug)
+	}
+
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+
+	http.Redirect(w, r, url, http.StatusFound)
 }
 
 // GET /v1/minurls/{slug}

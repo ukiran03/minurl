@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -90,4 +91,21 @@ func (app *application) readJSON(
 	}
 
 	return nil
+}
+
+func sanitizeUrl(targetUrl string) string {
+	targetUrl = strings.TrimSpace(targetUrl)
+
+	parsed, err := url.Parse(targetUrl)
+	if err != nil {
+		// If it completely fails to parse, return it as-is
+		// (or handle it as an error based on your needs)
+		return targetUrl
+	}
+
+	if parsed.Scheme == "http" || parsed.Scheme == "https" {
+		return targetUrl
+	}
+	targetUrl = strings.TrimLeft(targetUrl, ":/")
+	return "https://" + targetUrl
 }
