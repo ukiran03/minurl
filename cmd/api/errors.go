@@ -10,6 +10,13 @@ var ErrInvalidCustomSlug = errors.New(
 	"invalid slug format. slugs can only contain letters, numbers, hyphens, and underscores, and must be between 8 and 32 characters long",
 )
 
+var (
+	ErrInvalidURL    = errors.New("invalid URL format")
+	ErrInvalidScheme = errors.New("URL scheme must be http or https")
+	ErrMissingHost   = errors.New("URL missing a valid host")
+	ErrUnsafeHost    = errors.New("URL points to an unsafe or local address")
+)
+
 func (app *application) badRequestResponse(
 	w http.ResponseWriter, r *http.Request, err error,
 ) {

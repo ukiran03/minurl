@@ -27,6 +27,11 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 		v.AddError("expires_at", err.Error())
 	}
 
+	inUrl, err := processURL(input.URL)
+	if err != nil {
+		v.AddError("invalid_url", err.Error())
+	}
+
 	if !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
@@ -34,7 +39,7 @@ func (app *application) createMinurlHandler(w http.ResponseWriter, r *http.Reque
 
 	// Base model initialization
 	minurl := &data.MinUrl{
-		URL:    sanitizeUrl(input.URL),
+		URL:    inUrl,
 		Title:  input.Title,
 		UserID: input.UserID,
 		Life:   lifespan,
@@ -119,9 +124,9 @@ func (app *application) deleteMinurlHandler(w http.ResponseWriter, r *http.Reque
 	var err error
 	_, parseErr := data.ParseBase62(slug)
 	if parseErr != nil {
-		err = app.models.MinUrls.DeleteMinUrlCustom(r.Context(), slug)
+		err = app.models.MinUrls.DeleteCustom(r.Context(), slug)
 	} else {
-		err = app.models.MinUrls.DeleteMinUrl(r.Context(), slug)
+		err = app.models.MinUrls.Delete(r.Context(), slug)
 	}
 
 	if err != nil {

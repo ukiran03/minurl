@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 )
 
@@ -93,19 +95,86 @@ func (app *application) readJSON(
 	return nil
 }
 
-func sanitizeUrl(targetUrl string) string {
-	targetUrl = strings.TrimSpace(targetUrl)
+// -- Validate URL & Sanitize --
 
-	parsed, err := url.Parse(targetUrl)
+func processURL(inputRawURL string) (string, error) {
+	// DoS vector prevention
+	cleanInput := strings.TrimSpace(inputRawURL)
+	if len(cleanInput) > 2048 {
+		return "", errors.New("URL too long")
+	}
+	if cleanInput == "" {
+		return "", errors.New("empty URL")
+	}
+
+	// ensure scheme
+	cleanInput = ensureScheme(cleanInput)
+
+	parsedURL, err := url.ParseRequestURI(cleanInput)
 	if err != nil {
-		// If it completely fails to parse, return it as-is
-		// (or handle it as an error based on your needs)
-		return targetUrl
+		return "", ErrInvalidURL
 	}
 
-	if parsed.Scheme == "http" || parsed.Scheme == "https" {
-		return targetUrl
+	// enforce HTTP/HTTPS only
+	scheme := strings.ToLower(parsedURL.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", ErrInvalidScheme
 	}
-	targetUrl = strings.TrimLeft(targetUrl, ":/")
-	return "https://" + targetUrl
+
+	host := parsedURL.Hostname()
+	if host == "" {
+		return "", ErrMissingHost
+	}
+
+	// SSRF protection (block internal IPs/localhost)
+	if isLocalOrInvalidHost(host) {
+		return "", ErrUnsafeHost
+	}
+
+	return sanitizeURL(parsedURL), nil
+}
+
+func ensureScheme(raw string) string {
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return raw
+	}
+
+	if strings.HasPrefix(raw, "://") {
+		return "https" + raw
+	}
+
+	// Default to secure https
+	return "https://" + raw
+}
+
+func sanitizeURL(u *url.URL) string {
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+
+	// strip default ports to deduplicate DB records
+	if (u.Scheme == "http" && u.Port() == "80") ||
+		(u.Scheme == "https" && u.Port() == "443") {
+		u.Host = u.Hostname()
+	}
+
+	// clean path redundancies (e.g., /foo/bar/../baz -> /foo/baz)
+	if u.Path != "" {
+		u.Path = path.Clean(u.Path)
+	} else {
+		u.Path = "/"
+	}
+
+	return u.String()
+}
+
+func isLocalOrInvalidHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()
+	}
+	return false
 }
