@@ -1,4 +1,4 @@
-package data
+package flake
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 func TestBase62RoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string
-		input flake
+		input Flake
 	}{
 		{"Zero ID", 0},
 		{"Small ID", 61},
@@ -62,7 +62,7 @@ func TestParseBase62_Validation(t *testing.T) {
 }
 
 func BenchmarkBase62Encode(b *testing.B) {
-	f := flake(1234567890123456)
+	f := Flake(1234567890123456)
 	for b.Loop() {
 		_ = f.Base62()
 	}

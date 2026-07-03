@@ -1,4 +1,4 @@
-package data
+package flake
 
 import (
 	"errors"
@@ -13,7 +13,7 @@ var (
 	ErrInvalidBase62 = errors.New("invalid base62")
 )
 
-type flake snowflake.ID
+type Flake snowflake.ID
 
 func init() {
 	for i := range len(decodeBase62Map) {
@@ -25,13 +25,13 @@ func init() {
 	}
 }
 
-func NewFlake(sfnid int64) flake {
+func NewFlake(sfnid int64) Flake {
 	node, _ := snowflake.NewNode(sfnid)
-	return flake(node.Generate())
+	return Flake(node.Generate())
 }
 
 // Base62 returns a base62 string of the snowflake ID
-func (f flake) Base62() string {
+func (f Flake) Base62() string {
 	num := int64(f)
 
 	if num < 62 {
@@ -51,7 +51,7 @@ func (f flake) Base62() string {
 }
 
 // ParseBase62 returns int64 representation of string (slug)
-func ParseBase62(s string) (flake, error) {
+func ParseBase62(s string) (Flake, error) {
 	if len(s) == 0 || len(s) > 11 {
 		return 0, ErrInvalidBase62
 	}
@@ -70,5 +70,5 @@ func ParseBase62(s string) (flake, error) {
 		result = (result * 62) + int64(val)
 	}
 
-	return flake(result), nil
+	return Flake(result), nil
 }
