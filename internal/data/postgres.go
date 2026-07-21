@@ -3,7 +3,7 @@ package data
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,12 +13,16 @@ import (
 type PostgresStore struct {
 	DB      *pgxpool.Pool
 	Timeout time.Duration // operational timeout
+	Logger  *slog.Logger
 }
 
-func NewPostgresStore(db *pgxpool.Pool, timeout time.Duration) Store {
+func NewPostgresStore(
+	db *pgxpool.Pool, timeout time.Duration, logger *slog.Logger,
+) *PostgresStore {
 	return &PostgresStore{
 		DB:      db,
 		Timeout: timeout,
+		Logger:  logger, // just in case
 	}
 }
 
@@ -39,7 +43,9 @@ func (s *PostgresStore) Put(ctx context.Context, minurl *MinUrl) error {
 	return err
 }
 
-func (s *PostgresStore) Get(ctx context.Context, minurl *MinUrl) (string, error) {
+func (s *PostgresStore) Get(
+	ctx context.Context, minurl *MinUrl,
+) (string, error) {
 	query := `SELECT url FROM minurls WHERE slug = $1`
 
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
@@ -74,24 +80,30 @@ func (s *PostgresStore) Delete(ctx context.Context, minurl *MinUrl) error {
 	return nil
 }
 
-func (s *PostgresStore) Copy(ctx context.Context, minurls []*MinUrl) error {
+func (s *PostgresStore) Copy(ctx context.Context, minurls []MinUrl) error {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	table := pgx.Identifier{"minurls"}
 	columns := []string{"slug", "url", "created_at", "expires_at"}
 
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 
-	rowsInserted, err := s.DB.CopyFrom(
-		ctx,
+	_, err = tx.CopyFrom(ctx,
 		table,
 		columns,
-		pgx.CopyFromSlice(len(minurls),
-			func(i int) ([]any, error) {
-				m := minurls[i]
-				return []any{m.Flake, m.URL, m.Life.Created, m.Life.Expiry},
-					nil
-			}),
+		pgx.CopyFromSlice(len(minurls), func(i int) ([]any, error) {
+			m := minurls[i]
+			return []any{m.Flake, m.URL, m.Life.Created, m.Life.Expiry}, nil
+		}),
 	)
-	fmt.Printf("Successfully bulk-inserted %d rows!\n", rowsInserted)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
