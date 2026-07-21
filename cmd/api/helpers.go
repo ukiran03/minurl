@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,12 @@ import (
 )
 
 type envelope map[string]any
+
+func getURLHash(longURL string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(longURL))
+	return hex.EncodeToString(hasher.Sum(nil)) // Always 32 characters
+}
 
 func (app *application) writeJSON(
 	w http.ResponseWriter, status int, data envelope, headers http.Header,
@@ -136,7 +144,8 @@ func processURL(inputRawURL string) (string, error) {
 
 func ensureScheme(raw string) string {
 	lower := strings.ToLower(raw)
-	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+	if strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") {
 		return raw
 	}
 
