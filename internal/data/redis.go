@@ -3,46 +3,127 @@ package data
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
-// Defining custom errors allows your cache-aside logic to easily
-// know when to query Postgres instead.
 var ErrCacheMiss = errors.New("cache miss")
 
 type RedisStore struct {
-	Rdb *redis.Client
-	TTL time.Duration
+	Rdb    *redis.Client
+	TTL    time.Duration
+	Logger *slog.Logger
 }
 
-func NewRedisStore(rdb *redis.Client, ttl time.Duration) *RedisStore {
+func NewRedisStore(
+	rdb *redis.Client, ttl time.Duration, logger *slog.Logger,
+) *RedisStore {
 	return &RedisStore{
-		Rdb: rdb,
-		TTL: ttl,
+		Rdb:    rdb,
+		TTL:    ttl,
+		Logger: logger,
 	}
 }
 
-// Put updates the cache.
+// Put writes the core object as a Hash and links an MD5 index pointer to it
+// atomically
 func (s *RedisStore) Put(ctx context.Context, minurl *MinUrl) error {
-	return s.Rdb.Set(ctx, minurl.Slug, minurl.URL, s.TTL).Err()
+	pipe := s.Rdb.TxPipeline()
+
+	redisKey := "minurl:" + minurl.Slug
+	data := map[string]any{
+		"flake":    minurl.Flake,
+		"slug":     minurl.Slug,
+		"url":      minurl.URL,
+		"url_hash": minurl.URLHash,
+	}
+
+	// Store the structural hash object
+	pipe.HSet(ctx, redisKey, data)
+	if s.TTL > 0 {
+		pipe.Expire(ctx, redisKey, s.TTL)
+	}
+
+	// Create the write-path secondary inde (MD5 Hash -> Redis Key Pointer)
+	indexKey := "index:hash:" + minurl.URLHash
+	pipe.Set(ctx, indexKey, redisKey, s.TTL)
+
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
-// Get checks the cache.
-func (s *RedisStore) Get(ctx context.Context, minurl *MinUrl) (string, error) {
-	val, err := s.Rdb.Get(ctx, minurl.Slug).Result()
+// GetByHash maps the incoming MD5 hash back to the core object (POST /v1/shorten path)
+func (s *RedisStore) GetByHash(
+	ctx context.Context, urlHash string,
+) (*MinUrl, error) {
+	// Resolve the secondary index pointer
+	redisKey, err := s.Rdb.Get(ctx, "index:hash:"+urlHash).Result()
 	if errors.Is(err, redis.Nil) {
-		return "", ErrCacheMiss
+		return nil, ErrCacheMiss
 	}
 	if err != nil {
-		return "", err // Redis connection error
+		return nil, err
 	}
-	return val, nil
+	// Fetch all fields from the primary Hash
+	return s.fetchMinUrl(ctx, redisKey)
 }
 
-// Delete evicts the item from cache
-// DOUBT: useful for Cache-Aside or Write-Through invalidation
+// GetBySlug directly accesses the object via its short slug (GET /:slug path)
+func (s *RedisStore) GetBySlug(
+	ctx context.Context, slug string,
+) (*MinUrl, error) {
+	redisKey := "minurl:" + slug
+	return s.fetchMinUrl(ctx, redisKey)
+}
+
+// Helper to scan a Redis Hash directly into our struct
+func (s *RedisStore) fetchMinUrl(
+	ctx context.Context, redisKey string,
+) (*MinUrl, error) {
+	var minurl MinUrl
+	err := s.Rdb.HGetAll(ctx, redisKey).Scan(&minurl)
+	if err != nil {
+		return nil, err
+	}
+
+	// Redis HGetAll returns an empty map/struct if the key doesn't exist
+	if minurl.Slug == "" {
+		return nil, ErrCacheMiss
+	}
+	return &minurl, nil
+}
+
+// ---
+
+// Delete completely removes the primary hash and its corresponding secondary index.
+// You can pass a partial MinUrl struct containing at least the Slug. If URLHash is
+// missing, it will look it up dynamically before purging.
 func (s *RedisStore) Delete(ctx context.Context, minurl *MinUrl) error {
-	return s.Rdb.Del(ctx, minurl.Slug).Err()
+	redisKey := "minurl:" + minurl.Slug
+
+	// 1. If URLHash wasn't provided, fetch it from the Hash before we destroy it
+	if minurl.URLHash == "" {
+		hash, err := s.Rdb.HGet(ctx, redisKey, "url_hash").Result()
+		if errors.Is(err, redis.Nil) {
+			return nil // Key already gone, nothing to do
+		}
+		if err != nil {
+			return err
+		}
+		minurl.URLHash = hash
+	}
+
+	// 2. Use an atomic pipeline to delete both keys
+	pipe := s.Rdb.TxPipeline()
+
+	pipe.Del(ctx, redisKey) // Delete primary data
+	pipe.Del(
+		ctx,
+		"index:hash:"+minurl.URLHash,
+	) // Delete secondary lookup index
+
+	_, err := pipe.Exec(ctx)
+	return err
 }

@@ -1,29 +1,31 @@
 package data
 
 import (
-	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
-	ErrRecordNotFound = errors.New("record not found")
-	ErrEditConflict   = errors.New("edit conflict")
+	RedisDataTTL = 24 * time.Hour  // redis data lifetime
+	PgCtxTimeout = 3 * time.Second // pgx query request context lifetime
 )
 
-var PgxReqCtxTTL = 3 * time.Second // pgx query request context lifetime
-
 type Models struct {
-	MinUrls MinUrlModel
+	Cache *RedisStore
+	DB    *PostgresStore
 }
 
-func NewModels(db *pgxpool.Pool, sfnid int) Models {
+func NewModels(
+	db *pgxpool.Pool, rdb *redis.Client, logger *slog.Logger,
+) Models {
 	return Models{
-		MinUrls: MinUrlModel{
-			SFNID: int64(sfnid),
-			DB:    db,
-			TTL:   PgxReqCtxTTL,
-		},
+		Cache: NewRedisStore(rdb, RedisDataTTL, logger),
+		DB:    NewPostgresStore(db, PgCtxTimeout, logger),
 	}
 }
+
+// [21-07-2026] REVIEW: How can we refactor the Models struct, accompanying
+// both the Stores
