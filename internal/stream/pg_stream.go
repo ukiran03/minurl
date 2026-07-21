@@ -41,7 +41,7 @@ var (
 
 type PostgresStream struct {
 	Store    *data.PostgresStore
-	Stream   jetstream.JetStream
+	Jets     jetstream.JetStream
 	Consumer jetstream.Consumer
 	Logger   *slog.Logger
 }
@@ -58,16 +58,14 @@ func NewPostgresStream(
 	}
 
 	consumer, err := jets.CreateOrUpdateConsumer(
-		ctx,
-		PgStreamName,
-		PgsConsumerCfg,
+		ctx, PgStreamName, PgsConsumerCfg,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &PostgresStream{
-		Stream:   jets,
+		Jets:     jets,
 		Consumer: consumer,
 		Store:    store,
 	}, nil
@@ -77,7 +75,7 @@ func NewPostgresStream(
 func (pgs *PostgresStream) Publish(
 	ctx context.Context, subject string, payload []byte,
 ) error {
-	_, err := pgs.Stream.Publish(ctx, subject, payload)
+	_, err := pgs.Jets.Publish(ctx, subject, payload)
 	return err
 }
 
@@ -87,7 +85,7 @@ func (pgs *PostgresStream) RunBatchProcess(
 	// Guard against nil configuration panics
 	if msgsCtx == nil || opts.FlushFunc == nil {
 		return fmt.Errorf(
-			"RunBatchProcess requires both MsgsCtx and FlushFunc to be set",
+			"error RunBatchProcess requires both MsgsCtx and FlushFunc to be set",
 		)
 	}
 	if opts.MaxBatchSize <= 0 {
@@ -268,5 +266,4 @@ func main() {
 
 	// Wait for shutdown signal, etc.
 }
-
 */

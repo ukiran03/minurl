@@ -23,7 +23,7 @@ type (
 )
 
 type Streamer interface {
-	Publish( // NOTE: There is no Acking for Publish, Do I need it ?
+	Publish(
 		ctx context.Context,
 		subject string,
 		payload []byte,
@@ -33,6 +33,8 @@ type Streamer interface {
 	// batching/flushing process. It blocks until the context is canceled.
 	Start(ctx context.Context) error
 }
+
+// NOTE: There is no Acking for Publish(), Do I need it ?
 
 /* --- TODO: Refactoring Ideas
 type StreamPubAck struct {
