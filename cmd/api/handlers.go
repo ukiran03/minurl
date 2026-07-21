@@ -65,7 +65,7 @@ func (app *application) createMinurlHandler(
 	}
 
 	// Core Cache Miss -> Instantly generate our unique SFID & Slug
-	minurl := makeMinUrl(int64(app.sfid), inURL, lifespan)
+	minurl := data.NewMinUrl(int64(app.sfid), inURL, lifespan)
 	minurl.URLHash = urlHash // Assign the pre-computed hash
 
 	payload, err := json.Marshal(minurl)
