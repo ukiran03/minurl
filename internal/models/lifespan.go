@@ -1,4 +1,4 @@
-package data
+package models
 
 import (
 	"errors"
@@ -24,7 +24,11 @@ func NewLifespan(expiryInput *string) (Lifespan, error) {
 	if expiryInput == nil {
 		return Lifespan{
 			Created: now,
-			Expiry:  now.AddDate(0, 0, 7), // TODO: Default 1 week (make a var),
+			Expiry: now.AddDate(
+				0,
+				0,
+				7,
+			), // TODO: Default 1 week (make a var),
 		}, nil
 	}
 

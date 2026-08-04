@@ -1,4 +1,4 @@
-package data
+package models
 
 import (
 	"context"
@@ -55,9 +55,9 @@ func (s *RedisStore) Put(ctx context.Context, minurl *MinUrl) error {
 }
 
 // GetByHash maps the incoming MD5 hash back to the core object (POST /v1/shorten path)
-func (s *RedisStore) GetByHash(
-	ctx context.Context, urlHash string,
-) (*MinUrl, error) {
+func (s *RedisStore) GetByHash(ctx context.Context, urlHash string) (
+	*MinUrl, error,
+) {
 	// Resolve the secondary index pointer
 	redisKey, err := s.Rdb.Get(ctx, "index:hash:"+urlHash).Result()
 	if errors.Is(err, redis.Nil) {
@@ -71,17 +71,17 @@ func (s *RedisStore) GetByHash(
 }
 
 // GetBySlug directly accesses the object via its short slug (GET /:slug path)
-func (s *RedisStore) GetBySlug(
-	ctx context.Context, slug string,
-) (*MinUrl, error) {
+func (s *RedisStore) GetBySlug(ctx context.Context, slug string) (
+	*MinUrl, error,
+) {
 	redisKey := "minurl:" + slug
 	return s.fetchMinUrl(ctx, redisKey)
 }
 
 // Helper to scan a Redis Hash directly into our struct
-func (s *RedisStore) fetchMinUrl(
-	ctx context.Context, redisKey string,
-) (*MinUrl, error) {
+func (s *RedisStore) fetchMinUrl(ctx context.Context, redisKey string) (
+	*MinUrl, error,
+) {
 	var minurl MinUrl
 	err := s.Rdb.HGetAll(ctx, redisKey).Scan(&minurl)
 	if err != nil {

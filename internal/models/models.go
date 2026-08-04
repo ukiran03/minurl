@@ -1,4 +1,4 @@
-package data
+package models
 
 import (
 	"log/slog"
@@ -27,5 +27,5 @@ func NewModels(
 	}
 }
 
-// [21-07-2026] REVIEW: How can we refactor the Models struct, accompanying
+// [21-07-2026] DOUBT: How can we refactor the Models struct, accompanying
 // both the Stores

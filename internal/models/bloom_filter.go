@@ -1,4 +1,4 @@
-package data
+package models
 
 import (
 	"context"
@@ -24,12 +24,16 @@ func NewBloomFilter(rdb *redis.Client) *BloomFilter {
 
 // initFilter runs: BF.RESERVE minurl:long:bloom 0.01 10000000
 func (bf *BloomFilter) InitFilter(ctx context.Context) error {
-	_, err := bf.Rdb.BFReserve(ctx, bloomFilterKey, errorRate, capacity).Result()
+	_, err := bf.Rdb.BFReserve(ctx, bloomFilterKey, errorRate, capacity).
+		Result()
 	return err
 }
 
 // Exists checks if the long URL might alredy exist (BF.EXISTS)
-func (bf *BloomFilter) Exists(ctx context.Context, longURL string) (bool, error) {
+func (bf *BloomFilter) Exists(
+	ctx context.Context,
+	longURL string,
+) (bool, error) {
 	return bf.Rdb.BFExists(ctx, bloomFilterKey, longURL).Result()
 }
 
