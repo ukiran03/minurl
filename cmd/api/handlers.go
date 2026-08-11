@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"ukiran.com/minurl/internal/data"
+	"ukiran.com/minurl/internal/flake"
 	"ukiran.com/minurl/internal/validator"
 )
 
@@ -40,7 +42,6 @@ func (app *application) createMinurlHandler(
 		return
 	}
 
-	// Generate the URLhash early to perform lookups
 	urlHash := getURLHash(inURL)
 
 	// Query the Bloom Filter
@@ -53,20 +54,18 @@ func (app *application) createMinurlHandler(
 		// Verify against Redis using our secondary index
 		storedMinUrl, err := app.models.Cache.GetByHash(r.Context(), urlHash)
 		if err == nil && storedMinUrl != nil {
-			// Idempotent Match Found: Return 200 OK with the existing resource data
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			if err := json.NewEncoder(w).Encode(storedMinUrl); err != nil {
-				app.logger.Error("failed to encode response", "error", err)
-			}
+			app.writeJSON(
+				w, http.StatusOK, envelope{"url": storedMinUrl.URL}, nil,
+			)
 			return
 		}
-		// If it was a false positive, we fall through safely
+		// NOTE: If Bloom said true, but Redis returned nil (false positive),
+		// it proceeds to create a new entry safely.
 	}
 
 	// Core Cache Miss -> Instantly generate our unique SFID & Slug
 	minurl := data.NewMinUrl(int64(app.sfid), inURL, lifespan)
-	minurl.URLHash = urlHash // Assign the pre-computed hash
+	minurl.URLHash = urlHash
 
 	payload, err := json.Marshal(minurl)
 	if err != nil {
@@ -74,49 +73,91 @@ func (app *application) createMinurlHandler(
 		return
 	}
 
-	// Publish to Jetstream for DB asynv ingestion
-	err = app.stream.Publish(r.Context(), "minurl.created", payload)
-	if err != nil {
-		app.logger.Error("jetstream publish failed", "error", err)
+	// Update Cache layers FIRST, so immediate reads won't hit a DB race
+	if err := app.models.Cache.Put(r.Context(), minurl); err != nil {
+		app.logger.Error("failed to update redis cache", "error", err)
 		app.serverErrorResponse(
-			w, r, errors.New("failed to queue database write"),
+			w,
+			r,
+			errors.New("failed to process short URL cache"),
 		)
 		return
 	}
-	/* app.logger.Info("message persisted in stream",
-	   "stream", pubAck.Stream, "seq", pubAck.Sequence) */
 
-	// Update Cache layers (Populates both the Hash structure and index)
-	if err := app.models.Cache.Put(r.Context(), minurl); err != nil {
-		app.logger.Error("failed to update redis cache", "error", err)
+	// Publish to Jetstream for DB async ingestion AFTER cache is secured
+	err = app.stream.Publish(r.Context(), "minurl.created", payload)
+	if err != nil {
+		app.logger.Error("jetstream publish failed", "error", err)
+		// Optional: Consider rolling back or handling stale cache if publishing fails
+		app.serverErrorResponse(
+			w,
+			r,
+			errors.New("failed to queue database write"),
+		)
+		return
 	}
+	/* app.logger.Info("message persisted in stream", "stream", pubAck.Stream,
+	"seq", pubAck.Sequence) */
 
 	if err := app.bloom.Add(r.Context(), urlHash); err != nil {
 		app.logger.Error("failed to add to bloom filter", "error", err)
 	}
 
-	// Return 201 Created
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(minurl); err != nil {
-		app.logger.Error("failed to encode response", "error", err)
-	}
+	// Return 201 Created using a helper if available, or standard encoding
+	app.writeJSON(w, http.StatusCreated, envelope{"url": minurl.URL}, nil)
 }
 
 // GET /{slug}
 func (app *application) redirectHandler(
 	w http.ResponseWriter,
 	r *http.Request,
-)
+) {
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	// Hit Redis cache first!
+	cachedMinUrl, err := app.models.Cache.GetBySlug(r.Context(), slug)
+	if err == nil && cachedMinUrl != nil {
+		http.Redirect(w, r, cachedMinUrl.URL, http.StatusFound)
+		return
+	}
+
+	// Fall through Postgres DB
+	var f flake.Flake
+	if f, err = flake.ParseBase62(slug); err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	minurl := &data.MinUrl{
+		Flake: int64(f),
+	}
+
+	longUrl, err := app.models.DB.Get(r.Context(), minurl)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// TODO: Add to stats DB
+	http.Redirect(w, r, longUrl, http.StatusFound)
+}
+
+// These handlers below will be used to retrive information/stats of minurls
 
 // GET /v1/minurls/{slug}
 func (app *application) getMinurlHandler(
 	w http.ResponseWriter,
 	r *http.Request,
-)
+) {
+}
 
 // DELETE /v1/minurls/{slug}
 func (app *application) deleteMinurlHandler(
 	w http.ResponseWriter,
 	r *http.Request,
-)
+) {
+}

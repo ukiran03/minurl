@@ -1,4 +1,4 @@
-package models
+package data
 
 import "ukiran.com/minurl/internal/flake"
 

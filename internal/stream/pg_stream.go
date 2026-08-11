@@ -105,7 +105,7 @@ func (pgs *PostgresStream) RunBatchProcess(
 	batch := make([]data.MinUrl, 0, opts.MaxBatchSize)
 	natsMsgs := make([]jetstream.Msg, 0, opts.MaxBatchSize)
 
-	// Use an unbuffered channel to tightly couple reader & consumer,
+	// Using an unbuffered channel to tightly couple reader & consumer,
 	// preventing unacknowledged messages from getting stuck in an internal
 	// channel buffer during shutdown.
 	msgChan := make(chan jetstream.Msg)
@@ -231,39 +231,3 @@ func (pgs *PostgresStream) Start(ctx context.Context) error {
 
 	return pgs.RunBatchProcess(ctx, msgsCtx, opts)
 }
-
-/*
-Usage in Your Application Boot (main.go): Because the interface hides all the
-NATS initialization and wiring details inside the stream package, your
-initialization code becomes incredibly clean and standard.
-
-func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// 1. Init your postgres store
-	store := &PostgresStore{
-		DB:      pool,
-		Timeout: 5 * time.Second,
-		Logger:  logger,
-	}
-
-	// 2. Init the stream (using our Streamer interface type!)
-	var pgStream stream.Streamer
-	var err error
-
-	pgStream, err = stream.NewPostgresStream(ctx, js, store)
-	if err != nil {
-		log.Fatalf("failed to init stream: %v", err)
-	}
-
-	// 3. Run the engine in the background
-	go func() {
-		if err := pgStream.Start(ctx); err != nil {
-			log.Printf("stream processor exited with error: %v", err)
-		}
-	}()
-
-	// Wait for shutdown signal, etc.
-}
-*/
