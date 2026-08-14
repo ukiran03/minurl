@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"ukiran.com/minurl/internal/data"
 	"ukiran.com/minurl/internal/flake"
+	"ukiran.com/minurl/internal/stream"
 	"ukiran.com/minurl/internal/validator"
 )
 
@@ -55,7 +56,11 @@ func (app *application) createMinurlHandler(
 		storedMinUrl, err := app.models.Cache.GetByHash(r.Context(), urlHash)
 		if err == nil && storedMinUrl != nil {
 			app.writeJSON(
-				w, http.StatusOK, envelope{"url": storedMinUrl.URL}, nil,
+				w, http.StatusOK,
+				envelope{
+					"url":       storedMinUrl.URL,
+					"short_url": storedMinUrl.Slug,
+				}, nil,
 			)
 			return
 		}
@@ -85,7 +90,7 @@ func (app *application) createMinurlHandler(
 	}
 
 	// Publish to Jetstream for DB async ingestion AFTER cache is secured
-	err = app.stream.Publish(r.Context(), "minurl.created", payload)
+	err = app.stream.Publish(r.Context(), stream.PgsSubjectName, payload)
 	if err != nil {
 		app.logger.Error("jetstream publish failed", "error", err)
 		// Optional: Consider rolling back or handling stale cache if publishing fails
@@ -104,7 +109,10 @@ func (app *application) createMinurlHandler(
 	}
 
 	// Return 201 Created using a helper if available, or standard encoding
-	app.writeJSON(w, http.StatusCreated, envelope{"url": minurl.URL}, nil)
+	app.writeJSON(w, http.StatusCreated, envelope{
+		"url":       minurl.URL,
+		"short_url": minurl.Slug,
+	}, nil)
 }
 
 // GET /{slug}
@@ -138,6 +146,10 @@ func (app *application) redirectHandler(
 
 	longUrl, err := app.models.DB.Get(r.Context(), minurl)
 	if err != nil {
+		if errors.Is(err, data.ErrRecordNotFound) {
+			app.notFoundResponse(w, r)
+			return
+		}
 		app.serverErrorResponse(w, r, err)
 		return
 	}
