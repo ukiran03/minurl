@@ -27,10 +27,10 @@ func NewPostgresStore(
 }
 
 func (s *PostgresStore) Put(ctx context.Context, minurl *MinUrl) error {
-	query := `INSERT INTO minurls (slug, url, created_at, expires_at)
-	          VALUES ($1, $2, $3, $4)`
+	query := `INSERT INTO minurls (slug, url,url_hash, created_at, expires_at)
+	          VALUES ($1, $2, $3, $4, $5)`
 	params := []any{
-		minurl.Flake, minurl.URL,
+		minurl.Flake, minurl.URL, minurl.URLHash,
 		minurl.Life.Created, minurl.Life.Expiry,
 	}
 
@@ -88,7 +88,7 @@ func (s *PostgresStore) Copy(ctx context.Context, minurls []MinUrl) error {
 	defer tx.Rollback(ctx)
 
 	table := pgx.Identifier{"minurls"}
-	columns := []string{"slug", "url", "created_at", "expires_at"}
+	columns := []string{"slug", "url", "url_hash", "created_at", "expires_at"}
 
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
@@ -98,7 +98,13 @@ func (s *PostgresStore) Copy(ctx context.Context, minurls []MinUrl) error {
 		columns,
 		pgx.CopyFromSlice(len(minurls), func(i int) ([]any, error) {
 			m := minurls[i]
-			return []any{m.Flake, m.URL, m.Life.Created, m.Life.Expiry}, nil
+			return []any{
+				m.Flake,
+				m.URL,
+				m.URLHash,
+				m.Life.Created,
+				m.Life.Expiry,
+			}, nil
 		}),
 	)
 	if err != nil {
