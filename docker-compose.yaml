@@ -1,6 +1,29 @@
 services:
+  app:
+    build: .
+    restart: unless-stopped
+    container_name: minurl_app
+    ports:
+      - "4000:4000"
+    environment:
+      - REDIS_ADDR=minurl_redis:6379
+      - NATS_URL=nats://minurl_nats:4222
+      - POSTGRES_DSN=postgres://postgres:pass123@minurl_db:5432/minurl?sslmode=disable
+      - SNOWFLAKE_NODE_ID=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
   postgres:
     image: postgres:18
+    restart: unless-stopped
+    shm_size: 128mb
     container_name: minurl_db
     environment:
       POSTGRES_USER: postgres
@@ -10,6 +33,51 @@ services:
       - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d minurl"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrator:
+    image: ghcr.io/kukymbr/goose-docker:latest
+    container_name: minurl_migrator
+    environment:
+      - GOOSE_DRIVER=postgres
+      - GOOSE_DBSTRING=postgres://postgres:pass123@minurl_db:5432/minurl?sslmode=disable
+      - GOOSE_DIR=/migrations
+      - GOOSE_COMMAND=up
+    volumes:
+      - ./migrations/postgres:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    container_name: minurl_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # To give redis-stack time to fully boot up
+
+  nats:
+    image: nats:alpine
+    restart: unless-stopped
+    container_name: minurl_nats
+    command: ["-js"] # <-- Enable JetStream here
+    ports:
+      - "4222:4222"
+      - "8222:8222"
 
 volumes:
   db_data:
+  redis_data:
