@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE minurls (
+CREATE TABLE IF NOT EXISTS minurls (
     slug        BIGINT NOT NULL,
     url         TEXT NOT NULL,
     url_hash    CHAR(32) NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE minurls (
 );
 
 -- Partial index for background TTL workers
-CREATE INDEX idx_minurls_expires_at
+CREATE INDEX IF NOT EXISTS idx_minurls_expires_at
   ON minurls (expires_at)
   WHERE expires_at IS NOT NULL;
 
