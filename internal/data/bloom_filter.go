@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -22,11 +23,20 @@ func NewBloomFilter(rdb *redis.Client) *BloomFilter {
 	}
 }
 
-// initFilter runs: BF.RESERVE minurl:long:bloom 0.01 10000000
+// InitFilter runs: BF.RESERVE minurl:long:bloom 0.01 10000000
 func (bf *BloomFilter) InitFilter(ctx context.Context) error {
-	_, err := bf.Rdb.BFReserve(ctx, bloomFilterKey, errorRate, capacity).
-		Result()
-	return err
+	_, err := bf.Rdb.BFReserve(
+		ctx, bloomFilterKey, errorRate, capacity,
+	).Result()
+	if err != nil {
+		// If the filter already exists, Redis returns an error containing "item exists".
+		// We can safely ignore this error so the app boots successfully.
+		if strings.Contains(err.Error(), "item exists") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Exists checks if the long URL might alredy exist (BF.EXISTS)
