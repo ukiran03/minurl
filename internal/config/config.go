@@ -18,6 +18,13 @@ type Config struct {
 		MaxIdleConns int
 		MaxIdleTime  time.Duration
 	}
+	RDB struct {
+		Addr   string
+		Passwd string
+	}
+	NATS struct {
+		URL string
+	}
 }
 
 func Load() (*Config, error) {
@@ -28,7 +35,7 @@ func Load() (*Config, error) {
 		"Environment (development|staging|production)")
 	flag.StringVar(
 		&cfg.DB.DSN, "db-dsn",
-		os.Getenv("MINURL_DB_DSN"), "PostgreSQL DSN")
+		os.Getenv("POSTGRES_DSN"), "PostgreSQL DSN")
 	flag.IntVar(&cfg.DB.MaxOpenConns, "db-max-open-conns",
 		25, "PostgreSQL max open connections")
 	flag.IntVar(&cfg.DB.MaxIdleConns, "db-max-idle-conns",
@@ -36,14 +43,31 @@ func Load() (*Config, error) {
 	flag.DurationVar(&cfg.DB.MaxIdleTime, "db-max-idle-time",
 		2*time.Minute, "PostgreSQL max connection idle time")
 
+	flag.StringVar(
+		&cfg.RDB.Addr, "rdb-addr", os.Getenv("REDIS_ADDR"), "Redis Address",
+	)
+	flag.StringVar(
+		&cfg.RDB.Passwd,
+		"rdb-passwd", os.Getenv("REDIS_PASSWD"), "Redis Password",
+	)
+
+	flag.StringVar(
+		&cfg.NATS.URL, "nats-url", os.Getenv("NATS_URL"), "NATS URL",
+	)
+
 	sfNodeStr := os.Getenv("SNOWFLAKE_NODE_ID")
 	if sfNodeStr == "" {
-		return nil, fmt.Errorf("SNOWFLAKE_NODE_ID environment variable is empty")
+		return nil, fmt.Errorf(
+			"SNOWFLAKE_NODE_ID environment variable is empty",
+		)
 	}
 	var err error
 	cfg.SFNode, err = strconv.Atoi(sfNodeStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid SFNID (Snowflake Node ID) format: %v", err)
+		return nil, fmt.Errorf(
+			"invalid SFNID (Snowflake Node ID) format: %v",
+			err,
+		)
 	}
 
 	flag.Parse()

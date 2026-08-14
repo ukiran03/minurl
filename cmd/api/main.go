@@ -57,7 +57,7 @@ func run() error {
 	defer db.Close()
 	logger.Info("database connection pool established")
 
-	rdb, err := connectRedis("localhost:6379", "") // TODO: get via config
+	rdb, err := connectRedis(cfg)
 	if err != nil {
 		return fmt.Errorf("unable to connect to redis: %w", err)
 	}
@@ -69,14 +69,21 @@ func run() error {
 		return fmt.Errorf("unable to initialize bloom filter: %w", err)
 	}
 
-	jets, err := connectNats(nats.DefaultURL)
+	nc, err := connectNats(cfg)
+	if err != nil {
+		return fmt.Errorf("nats connection error: %w", err)
+	}
+	// Close NATS connection when run() returns, AFTER wg.Wait() completes
+	defer nc.Close()
+
+	jets, err := jetstream.New(nc)
 	if err != nil {
 		return fmt.Errorf("jetStream error: %w", err)
 	}
 
 	models := data.NewModels(db, rdb, logger)
 
-	pgStream, err := stream.NewPostgresStream(appCtx, jets, models.DB)
+	pgStream, err := stream.NewPostgresStream(appCtx, jets, models.DB, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create postgres stream: %w", err)
 	}
@@ -102,8 +109,7 @@ func run() error {
 		return fmt.Errorf("server error: %w", err)
 	}
 
-	// Wait for background workers (like pgStream) to finish before defers
-	// close DB/Redis
+	// Wait for background workers (like pgStream) to finish before defers execute
 	app.wg.Wait()
 	logger.Info("application shutdown complete")
 	return nil
@@ -136,34 +142,42 @@ func openDB(cfg *config.Config) (*pgxpool.Pool, error) {
 	return pool, err
 }
 
-func connectRedis(addr, passwd string) (*redis.Client, error) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:         addr,
-		Password:     passwd,
+func connectRedis(cfg *config.Config) (*redis.Client, error) {
+	opts := &redis.Options{
+		Addr:         cfg.RDB.Addr,
+		Password:     cfg.RDB.Passwd,
 		DB:           0,
 		PoolSize:     10,
 		MinIdleConns: 5,
-	})
+	}
+	rdb := redis.NewClient(opts)
 
-	// shorter timeout for the initial Ping
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	var err error
+	for range 3 {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err = rdb.Ping(ctx).Err()
+		cancel()
 
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		// Clean up the client if the connection is dead
-		_ = rdb.Close()
-		return nil, fmt.Errorf("redis connection failed: %w", err)
+		if err == nil {
+			return rdb, nil
+		}
+		// Wait briefly before retrying in case Redis Stack is still warming up
+		// modules
+		time.Sleep(time.Second)
 	}
 
-	return rdb, nil
+	_ = rdb.Close()
+	return nil, fmt.Errorf("redis connection failed: %w", err)
 }
 
-func connectNats(natsURL string) (jetstream.JetStream, error) {
+func connectNats(cfg *config.Config) (*nats.Conn, error) {
+	natsURL := cfg.NATS.URL
+	if natsURL == "" {
+		natsURL = nats.DefaultURL
+	}
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		return nil, err
 	}
-	defer nc.Close()
-
-	return jetstream.New(nc)
+	return nc, err
 }
