@@ -25,9 +25,12 @@ func init() {
 	}
 }
 
-func NewFlake(sfnid int64) Flake {
-	node, _ := snowflake.NewNode(sfnid)
-	return Flake(node.Generate())
+func NewFlake(sfnid int64) (Flake, error) {
+	node, err := snowflake.NewNode(sfnid)
+	if err != nil {
+		return 0, err
+	}
+	return Flake(node.Generate()), nil
 }
 
 // Base62 returns a base62 string of the snowflake ID
