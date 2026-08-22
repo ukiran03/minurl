@@ -1,6 +1,15 @@
 package data
 
-import "ukiran.com/minurl/internal/flake"
+import (
+	"time"
+
+	"ukiran.com/minurl/internal/flake"
+)
+
+// BatchItem defines the constraint for types allowed in a batch.
+type BatchItem interface {
+	MinUrl | ClickEvent
+}
 
 type MinUrl struct {
 	Flake   int64    `json:"flake"    redis:"flake"`
@@ -22,4 +31,12 @@ func NewMinUrl(
 		URL:   longURL,
 		Life:  lifespan,
 	}
+}
+
+type ClickEvent struct {
+	Slug       string    `json:"slug"`
+	Timestamp  time.Time `json:"timestamp"`
+	RemoteAddr string    `json:"remote_addr"`
+	UserAgent  string    `json:"user_agent"`
+	Referrer   string    `json:"referrer"`
 }

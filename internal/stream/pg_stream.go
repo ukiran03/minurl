@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	PgsBatchOpts = BatchOpts{
+	PgsBatchOpts = BatchOpts[data.MinUrl]{
 		MaxBatchSize:  100,
 		FlushInterval: 2 * time.Second,
 	}
@@ -108,7 +108,9 @@ func (pgs *PostgresStream) Publish(
 }
 
 func (pgs *PostgresStream) RunBatchProcess(
-	ctx context.Context, msgsCtx jetstream.MessagesContext, opts BatchOpts,
+	ctx context.Context,
+	msgsCtx jetstream.MessagesContext,
+	opts BatchOpts[data.MinUrl],
 ) error {
 	// Guard against nil configuration panics
 	if msgsCtx == nil || opts.FlushFunc == nil {
@@ -223,7 +225,7 @@ func (pgs *PostgresStream) RunBatchProcess(
 }
 
 // FlushHandler bridges PostgresStore.Copy and NATS JetStream ACKs
-func (pgs *PostgresStream) FlushHandler() FlushFunc {
+func (pgs *PostgresStream) FlushHandler() FlushFunc[data.MinUrl] {
 	return func(
 		ctx context.Context,
 		batch []data.MinUrl,
@@ -251,7 +253,7 @@ func (pgs *PostgresStream) Start(ctx context.Context) error {
 		return err
 	}
 
-	opts := BatchOpts{
+	opts := BatchOpts[data.MinUrl]{
 		MaxBatchSize:  PgsBatchOpts.MaxBatchSize,
 		FlushInterval: PgsBatchOpts.FlushInterval,
 		FlushFunc:     pgs.FlushHandler(), // Connects the store to the stream

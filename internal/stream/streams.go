@@ -8,19 +8,17 @@ import (
 	"ukiran.com/minurl/internal/data"
 )
 
-type (
-	FlushFunc func(
-		ctx context.Context,
-		batch []data.MinUrl,
-		msgs []jetstream.Msg,
-	) error
+type FlushFunc[T data.BatchItem] func(
+	ctx context.Context,
+	batch []T,
+	msgs []jetstream.Msg,
+) error
 
-	BatchOpts struct {
-		MaxBatchSize  int
-		FlushInterval time.Duration
-		FlushFunc     FlushFunc
-	}
-)
+type BatchOpts[T data.BatchItem] struct {
+	MaxBatchSize  int
+	FlushInterval time.Duration
+	FlushFunc     FlushFunc[T]
+}
 
 type Streamer interface {
 	Publish(ctx context.Context, subject string, payload []byte) error
