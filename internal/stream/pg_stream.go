@@ -2,7 +2,6 @@ package stream
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -82,8 +81,7 @@ func NewPostgresStream(
 		}
 	}
 
-	// Consider adding retries here as well if consumer creation is flaky on
-	// startup
+	// Adding retries here as well if consumer creation is flaky on startup
 	consumer, err := jets.CreateOrUpdateConsumer(
 		ctx, PgStreamName, PgsConsumerCfg,
 	)
@@ -105,123 +103,6 @@ func (pgs *PostgresStream) Publish(
 ) error {
 	_, err := pgs.Jets.Publish(ctx, subject, payload)
 	return err
-}
-
-func (pgs *PostgresStream) RunBatchProcess(
-	ctx context.Context,
-	msgsCtx jetstream.MessagesContext,
-	opts BatchOpts[data.MinUrl],
-) error {
-	// Guard against nil configuration panics
-	if msgsCtx == nil || opts.FlushFunc == nil {
-		return fmt.Errorf(
-			"error RunBatchProcess requires both MsgsCtx and FlushFunc to be set",
-		)
-	}
-	if opts.MaxBatchSize <= 0 {
-		opts.MaxBatchSize = 100
-	}
-	if opts.FlushInterval <= 0 {
-		opts.FlushInterval = 2 * time.Second
-	}
-
-	// Ensure NATS subscription stops when we exit this loop to prevent
-	// goroutine leaks
-	defer msgsCtx.Stop()
-
-	ticker := time.NewTicker(opts.FlushInterval)
-	defer ticker.Stop()
-
-	batch := make([]data.MinUrl, 0, opts.MaxBatchSize)
-	natsMsgs := make([]jetstream.Msg, 0, opts.MaxBatchSize)
-
-	// Using an unbuffered channel to tightly couple reader & consumer,
-	// preventing unacknowledged messages from getting stuck in an internal
-	// channel buffer during shutdown.
-	msgChan := make(chan jetstream.Msg)
-
-	// Start a background reader to fetch messages from JetStream. This
-	// prevents Next() from blocking ticker/context select loop.
-	go func() {
-		defer close(msgChan)
-		for {
-			msg, err := msgsCtx.Next()
-			if err != nil {
-				// Triggers when msgsCtx.Stop() is called or connection drops
-				return
-			}
-
-			select {
-			case msgChan <- msg:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
-
-		// Use parent context for shutdown safety, combined with a timeout
-		writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		if err := opts.FlushFunc(writeCtx, batch, natsMsgs); err != nil {
-			pgs.Logger.Error("Flush failed", "error", err, "batch", len(batch))
-		}
-
-		// Safely clear slices for the next batch without reallocation
-		batch = batch[:0]
-		natsMsgs = natsMsgs[:0]
-	}
-
-	for {
-		select {
-		case msg, ok := <-msgChan:
-			if !ok {
-				// msgChan closed means the JetStream iterator stopped
-				flush()
-				return nil
-			}
-
-			var u data.MinUrl
-			if err := json.Unmarshal(msg.Data(), &u); err != nil {
-				metadata, _ := msg.Metadata()
-				seq := uint64(0)
-				if metadata != nil {
-					seq = metadata.Sequence.Stream
-				}
-				pgs.Logger.Error(
-					"Malformed JSON skipped", "Seq", seq, "error", err,
-				)
-
-				_ = msg.Term() // NACK + terminate bad payloads instantly
-				continue
-			}
-
-			batch = append(batch, u)
-			natsMsgs = append(natsMsgs, msg)
-
-			if len(batch) >= opts.MaxBatchSize {
-				flush()
-				select {
-				// Drain ticker channel if a tick happened exactly
-				// during flush to avoid instant double-flushing
-				case <-ticker.C:
-				default:
-				}
-				ticker.Reset(opts.FlushInterval)
-			}
-
-		case <-ticker.C:
-			flush()
-
-		case <-ctx.Done():
-			flush()
-			return nil
-		}
-	}
 }
 
 // FlushHandler bridges PostgresStore.Copy and NATS JetStream ACKs
@@ -259,5 +140,5 @@ func (pgs *PostgresStream) Start(ctx context.Context) error {
 		FlushFunc:     pgs.FlushHandler(), // Connects the store to the stream
 	}
 
-	return pgs.RunBatchProcess(ctx, msgsCtx, opts)
+	return RunBatchProcess(ctx, msgsCtx, opts, pgs.Logger)
 }
