@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -96,12 +97,12 @@ func (app *application) createMinurlHandler(
 		payload,
 	)
 	if err != nil {
-		app.logger.Error("jetstream publish failed", "error", err)
+		app.logger.Error("postgres stream publish failed", "error", err)
 		// Optional: Consider rolling back or handling stale cache if publishing fails
 		app.serverErrorResponse(
 			w,
 			r,
-			errors.New("failed to queue database write"),
+			errors.New("failed to queue postgres database write"),
 		)
 		return
 	}
@@ -133,7 +134,7 @@ func (app *application) redirectHandler(
 	// Hit Redis cache first!
 	cachedMinUrl, err := app.models.Cache.GetBySlug(r.Context(), slug)
 	if err == nil && cachedMinUrl != nil {
-		http.Redirect(w, r, cachedMinUrl.URL, http.StatusFound)
+		app.executeRedirect(w, r, slug, cachedMinUrl.URL)
 		return
 	}
 
@@ -158,8 +159,33 @@ func (app *application) redirectHandler(
 		return
 	}
 
-	// TODO: Add to stats DB
-	http.Redirect(w, r, longUrl, http.StatusFound)
+	app.executeRedirect(w, r, slug, longUrl)
+}
+
+// Helper to keep redirection and analytics publishing DRY
+func (app *application) executeRedirect(
+	w http.ResponseWriter, r *http.Request, slug, targetURL string,
+) {
+	clickEvent := data.NewClickEvent(slug, r)
+
+	payload, err := json.Marshal(clickEvent)
+	if err != nil {
+		app.logger.Error("failed to marshal click event", "error", err)
+	} else {
+		// using a detached background context so the publish isn't aborted
+		// when the HTTP request context finishes upon redirection.
+		bgCtx := context.WithoutCancel(r.Context())
+
+		if err := app.clickhouseStream.Publish(
+			bgCtx, stream.ChStreamSubjectName, payload,
+		); err != nil {
+			app.logger.Error("clickhouse stream publish failed", "error", err)
+		}
+	}
+
+	// perform redirect (StatusFound / 302 used here to force browser re-visits
+	// for metrics tracking)
+	http.Redirect(w, r, targetURL, http.StatusFound)
 }
 
 // These handlers below will be used to retrive information/stats of minurls
