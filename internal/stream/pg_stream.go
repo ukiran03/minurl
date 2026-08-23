@@ -2,7 +2,6 @@ package stream
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -54,39 +53,13 @@ func NewPostgresStream(
 	store *data.PostgresStore,
 	logger *slog.Logger,
 ) (*PostgresStream, error) {
-	// var stream jetstream.Stream
-	var err error
-
-	// Retry loop to handle NATS JetStream initialization lag during startup
-	maxRetries := 5
-	for i := 1; i <= maxRetries; i++ {
-		_, err = jets.CreateOrUpdateStream(ctx, PgStreamCfg)
-		if err == nil {
-			break
-		}
-
-		if i == maxRetries {
-			return nil, fmt.Errorf(
-				"failed to create/update stream after %d attempts: %w",
-				maxRetries,
-				err,
-			)
-		}
-
-		// Context-aware sleep to respect timeouts/cancellations
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(time.Duration(i) * time.Second):
-		}
-	}
-
-	// Adding retries here as well if consumer creation is flaky on startup
-	consumer, err := jets.CreateOrUpdateConsumer(
-		ctx, PgStreamName, PgsConsumerCfg,
-	)
+	consumer, err := initStream(ctx, jets, StreamConfig{
+		StreamName:  PgStreamName,
+		StreamCfg:   PgStreamCfg,
+		ConsumerCfg: PgsConsumerCfg,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create/update consumer: %w", err)
+		return nil, err
 	}
 
 	return &PostgresStream{

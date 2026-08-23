@@ -149,3 +149,52 @@ func RunBatchProcess[T data.BatchItem](
 		}
 	}
 }
+
+// StreamConfig holds the specific configuration parameters for a Stream
+type StreamConfig struct {
+	StreamName  string
+	StreamCfg   jetstream.StreamConfig
+	ConsumerCfg jetstream.ConsumerConfig
+}
+
+// initStream is a shared helper to handle retries and consumer creation
+func initStream(
+	ctx context.Context,
+	jets jetstream.JetStream,
+	cfg StreamConfig,
+) (jetstream.Consumer, error) {
+	// var stream jetstream.Stream
+	var err error
+
+	// Retry loop to handle NATS JetStream initialization lag during startup
+	maxRetries := 5
+	for i := 1; i <= maxRetries; i++ {
+		_, err = jets.CreateOrUpdateStream(ctx, cfg.StreamCfg)
+		if err == nil {
+			break
+		}
+
+		if i == maxRetries {
+			return nil, fmt.Errorf(
+				"failed to create/update stream after %d attempts: %w",
+				maxRetries, err,
+			)
+		}
+
+		// Context-aware sleep to respect timeouts/cancellations
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(i) * time.Second):
+		}
+	}
+
+	consumer, err := jets.CreateOrUpdateConsumer(
+		ctx, cfg.StreamName, cfg.ConsumerCfg,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create/update consumer: %w", err)
+	}
+
+	return consumer, nil
+}
