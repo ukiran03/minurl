@@ -85,19 +85,7 @@ func (pgs *PostgresStream) FlushHandler() FlushFunc[data.MinUrl] {
 		batch []data.MinUrl,
 		msgs []jetstream.Msg,
 	) error {
-		// Write the batch to Postgres using Copy
-		if err := pgs.Store.Copy(ctx, batch); err != nil {
-			return err // so RunBatchProcess doesn't ACK and NATS redelivers
-		}
-
-		// If DB write succeeded, ACK all messages in the batch
-		for _, msg := range msgs {
-			if err := msg.Ack(); err != nil {
-				pgs.Logger.Error("failed to ack message", "error", err)
-			}
-		}
-
-		return nil
+		return HandleFlush(ctx, batch, msgs, pgs.Logger, pgs.Store.Copy)
 	}
 }
 

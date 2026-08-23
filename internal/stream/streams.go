@@ -198,3 +198,28 @@ func initStream(
 
 	return consumer, nil
 }
+
+// HandleFlush provides a generic flush logic for batch writing and ACKing NATS
+// messages.
+func HandleFlush[T data.BatchItem](
+	ctx context.Context,
+	batch []T,
+	msgs []jetstream.Msg,
+	logger *slog.Logger,
+	writeFn func(context.Context, []T) error,
+) error {
+	// Write the batch to the database
+	if err := writeFn(ctx, batch); err != nil {
+		// Return error so the processor (RunBatchProcess) skips ACKs and NATS
+		// redelivers
+		return err
+	}
+
+	// If DB write succeeded, ACK all messages in the batch
+	for _, msg := range msgs {
+		if err := msg.Ack(); err != nil {
+			logger.Error("failed to ack message", "error", err)
+		}
+	}
+	return nil
+}
