@@ -215,7 +215,7 @@ func HandleFlush[T data.BatchItem](
 		return err
 	}
 
-	// If DB write succeeded, ACK all messages in the batch
+	// If DB write succeeded, ACK all messages in the batch explicitly
 	for _, msg := range msgs {
 		if err := msg.Ack(); err != nil {
 			logger.Error("failed to ack message", "error", err)

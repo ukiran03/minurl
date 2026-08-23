@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -22,13 +24,14 @@ import (
 const version = "1.0.0"
 
 type application struct {
-	config *config.Config
-	logger *slog.Logger
-	models data.Models
-	stream stream.Streamer
-	bloom  *data.BloomFilter
-	sfid   int
-	wg     sync.WaitGroup
+	config           *config.Config
+	logger           *slog.Logger
+	models           data.Models
+	postgresStream   stream.Streamer
+	clickhouseStream stream.Streamer
+	bloom            *data.BloomFilter
+	sfid             int
+	wg               sync.WaitGroup
 }
 
 func main() {
@@ -50,12 +53,19 @@ func run() error {
 		return fmt.Errorf("config error: %w", err)
 	}
 
-	db, err := openDB(cfg)
+	pgDB, err := openDB(cfg)
 	if err != nil {
-		return fmt.Errorf("unable to connect to database: %w", err)
+		return fmt.Errorf("unable to connect to postgres database: %w", err)
 	}
-	defer db.Close()
-	logger.Info("database connection pool established")
+	defer pgDB.Close()
+	logger.Info("postgres database connection pool established")
+
+	chDB, err := connectClickHouse() // [23-08-2026] TODO: Use config.Config
+	if err != nil {
+		return fmt.Errorf("unable to connect to clickhouse database: %w", err)
+	}
+	defer chDB.Close()
+	logger.Info("clickhouse database connection pool established")
 
 	rdb, err := connectRedis(cfg)
 	if err != nil {
@@ -81,26 +91,53 @@ func run() error {
 		return fmt.Errorf("jetStream error: %w", err)
 	}
 
-	models := data.NewModels(db, rdb, logger)
+	models := data.NewModels(pgDB, chDB, rdb, logger)
 
-	pgStream, err := stream.NewPostgresStream(appCtx, jets, models.DB, logger)
+	pgStream, err := stream.NewPostgresStream(
+		appCtx,
+		jets,
+		models.PostgresDB,
+		logger,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create postgres stream: %w", err)
 	}
 
+	chStream, err := stream.NewClickHouseStream(
+		appCtx,
+		jets,
+		models.ClickhouseDB,
+		logger,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create clickhouse stream: %w", err)
+	}
+
 	app := &application{
-		config: cfg,
-		logger: logger,
-		models: models,
-		stream: pgStream,
-		bloom:  bloom,
-		sfid:   cfg.SFNode,
+		config:           cfg,
+		logger:           logger,
+		models:           models,
+		postgresStream:   pgStream,
+		clickhouseStream: chStream,
+		bloom:            bloom,
+		sfid:             cfg.SFNode,
 	}
 
 	app.wg.Go(func() {
 		if err := pgStream.Start(appCtx); err != nil &&
 			!errors.Is(err, context.Canceled) {
-			logger.Error("stream processor exited with error", "error", err)
+			logger.Error(
+				"postgers stream processor exited with error", "error", err,
+			)
+		}
+	})
+
+	app.wg.Go(func() {
+		if err := chStream.Start(appCtx); err != nil &&
+			!errors.Is(err, context.Canceled) {
+			logger.Error(
+				"clickhouse stream processor exited with error", "error", err,
+			)
 		}
 	})
 
@@ -140,6 +177,41 @@ func openDB(cfg *config.Config) (*pgxpool.Pool, error) {
 	}
 
 	return pool, err
+}
+
+func connectClickHouse() (driver.Conn, error) {
+	ctx := context.Background()
+	conn, err := clickhouse.Open(&clickhouse.Options{
+		Addr: []string{"<CLICKHOUSE_SECURE_NATIVE_HOSTNAME>:9440"},
+		Auth: clickhouse.Auth{
+			Database: "default",
+			Username: "default",
+			Password: "<DEFAULT_USER_PASSWORD>",
+		},
+		DialTimeout: 5 * time.Second,
+		Compression: &clickhouse.Compression{
+			Method: clickhouse.CompressionLZ4,
+		},
+		Logger: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := conn.Ping(ctx); err != nil {
+		if exception, ok := err.(*clickhouse.Exception); ok {
+			fmt.Printf(
+				"Exception [%d] %s \n%s\n",
+				exception.Code,
+				exception.Message,
+				exception.StackTrace,
+			)
+		}
+		return nil, err
+	}
+	return conn, nil
 }
 
 func connectRedis(cfg *config.Config) (*redis.Client, error) {

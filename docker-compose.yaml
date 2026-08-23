@@ -73,7 +73,7 @@ services:
     image: nats:alpine
     restart: unless-stopped
     container_name: minurl_nats
-    command: ["-js"] # <-- Enable JetStream here
+    command: ["-js"] # Enable JetStream
     ports:
       - "4222:4222"
       - "8222:8222"

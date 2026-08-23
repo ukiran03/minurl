@@ -90,7 +90,11 @@ func (app *application) createMinurlHandler(
 	}
 
 	// Publish to Jetstream for DB async ingestion AFTER cache is secured
-	err = app.stream.Publish(r.Context(), stream.PgsSubjectName, payload)
+	err = app.postgresStream.Publish(
+		r.Context(),
+		stream.PgsSubjectName,
+		payload,
+	)
 	if err != nil {
 		app.logger.Error("jetstream publish failed", "error", err)
 		// Optional: Consider rolling back or handling stale cache if publishing fails
@@ -144,7 +148,7 @@ func (app *application) redirectHandler(
 		Flake: int64(f),
 	}
 
-	longUrl, err := app.models.DB.Get(r.Context(), minurl)
+	longUrl, err := app.models.PostgresDB.Get(r.Context(), minurl)
 	if err != nil {
 		if errors.Is(err, data.ErrRecordNotFound) {
 			app.notFoundResponse(w, r)
