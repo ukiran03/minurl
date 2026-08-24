@@ -60,7 +60,7 @@ func run() error {
 	defer pgDB.Close()
 	logger.Info("postgres database connection pool established")
 
-	chDB, err := connectClickHouse() // [23-08-2026] TODO: Use config.Config
+	chDB, err := connectClickHouse(cfg) // [23-08-2026] TODO: Use config.Config
 	if err != nil {
 		return fmt.Errorf("unable to connect to clickhouse database: %w", err)
 	}
@@ -179,16 +179,21 @@ func openDB(cfg *config.Config) (*pgxpool.Pool, error) {
 	return pool, err
 }
 
-func connectClickHouse() (driver.Conn, error) {
+func connectClickHouse(cfg *config.Config) (driver.Conn, error) {
 	ctx := context.Background()
 	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{"<CLICKHOUSE_SECURE_NATIVE_HOSTNAME>:9440"},
+		Addr: []string{
+			fmt.Sprintf("%s:%d", cfg.CHDB.Host, cfg.CHDB.Port),
+		},
 		Auth: clickhouse.Auth{
-			Database: "default",
-			Username: "default",
-			Password: "<DEFAULT_USER_PASSWORD>",
+			Database: cfg.CHDB.DbName,
+			Username: cfg.CHDB.Username,
+			Password: "",
 		},
 		DialTimeout: 5 * time.Second,
+		Settings: clickhouse.Settings{
+			"max_execution_time": 60,
+		},
 		Compression: &clickhouse.Compression{
 			Method: clickhouse.CompressionLZ4,
 		},
@@ -202,15 +207,15 @@ func connectClickHouse() (driver.Conn, error) {
 
 	if err := conn.Ping(ctx); err != nil {
 		if exception, ok := err.(*clickhouse.Exception); ok {
-			fmt.Printf(
-				"Exception [%d] %s \n%s\n",
+			return nil, fmt.Errorf(
+				"clickhouse exception [%d]: %s",
 				exception.Code,
 				exception.Message,
-				exception.StackTrace,
 			)
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to connect/ping clickhouse: %w", err)
 	}
+
 	return conn, nil
 }
 

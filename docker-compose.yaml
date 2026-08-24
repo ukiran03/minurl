@@ -9,11 +9,19 @@ services:
       - REDIS_ADDR=minurl_redis:6379
       - NATS_URL=nats://minurl_nats:4222
       - POSTGRES_DSN=postgres://postgres:pass123@minurl_db:5432/minurl?sslmode=disable
+      - CLICKHOUSE_HOST=minurl_clickhouse
+      - CLICKHOUSE_DB=minurl
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWD=
       - SNOWFLAKE_NODE_ID=1
     depends_on:
       postgres:
         condition: service_healthy
       migrator:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+      clickhouse_migrator:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -53,8 +61,44 @@ services:
       postgres:
         condition: service_healthy
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    restart: unless-stopped
+    container_name: minurl_clickhouse
+    ports:
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # Native interface
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      - CLICKHOUSE_DB=minurl
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+
+  clickhouse_migrator:
+    image: ghcr.io/kukymbr/goose-docker:latest
+    container_name: minurl_clickhouse_migrator
+    environment:
+      - GOOSE_DRIVER=clickhouse
+      - GOOSE_DBSTRING=clickhouse://default:@minurl_clickhouse:9000/minurl
+      - GOOSE_DIR=/migrations
+      - GOOSE_COMMAND=up
+    volumes:
+      - ./migrations/clickhouse:/migrations:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
   redis:
-    image: redis:alpine
+    image: redis/redis-stack:latest
     restart: unless-stopped
     container_name: minurl_redis
     ports:
@@ -80,4 +124,6 @@ services:
 
 volumes:
   db_data:
+  clickhouse_data:
+  clickhouse_logs:
   redis_data:

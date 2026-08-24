@@ -12,7 +12,7 @@ import (
 const (
 	ChStreamName         = "CH_CLICKS_STREAM"
 	ChStreamConsumerName = "CH_CLICKS_CONSUMER"
-	ChStreamSubjectName  = "ch.clicks.>"
+	ChStreamSubjectName  = "ch.clicks.event"
 )
 
 var (
