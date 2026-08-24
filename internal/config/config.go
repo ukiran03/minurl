@@ -101,13 +101,17 @@ func Load() (*Config, error) {
 	}
 
 	var err error
-	cfg.SFNode, err = strconv.Atoi(sfNodeStr)
+	snowId, err := strconv.Atoi(sfNodeStr)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"invalid SFNID (Snowflake Node ID) format: %v",
+			"invalid SFNID (Snowflake Node ID) format: %w",
 			err,
 		)
 	}
+	if snowId < 0 || snowId > 1023 {
+		return nil, fmt.Errorf("invalid Snowflake node IDs (must be 0–1023)")
+	}
+	cfg.SFNode = snowId
 
 	flag.Parse()
 
