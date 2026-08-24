@@ -81,17 +81,32 @@ func (s *PostgresStore) Delete(ctx context.Context, minurl *MinUrl) error {
 }
 
 func (s *PostgresStore) Copy(ctx context.Context, minurls []MinUrl) error {
+	if len(minurls) == 0 {
+		return nil
+	}
+
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	table := pgx.Identifier{"minurls"}
-	columns := []string{"slug", "url", "url_hash", "created_at", "expires_at"}
-
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
+
+	// Create a unconstrained temporary staging table for the transaction
+	_, err = tx.Exec(ctx, `
+		CREATE TEMP TABLE minurls_staging (
+			LIKE minurls INCLUDING DEFAULTS
+		) ON COMMIT DROP;
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Stream batch into the staging table (now will never fail on unique constraints)
+	table := pgx.Identifier{"minurls_staging"}
+	columns := []string{"slug", "url", "url_hash", "created_at", "expires_at"}
 
 	_, err = tx.CopyFrom(ctx,
 		table,
@@ -111,5 +126,20 @@ func (s *PostgresStore) Copy(ctx context.Context, minurls []MinUrl) error {
 		return err
 	}
 
+	// Upsert from minurls_staging into the real table, ignoring duplicate
+	// hashes/slugs safely
+	_, err = tx.Exec(ctx, `
+		INSERT INTO minurls (slug, url, url_hash, created_at, expires_at)
+		SELECT slug, url, url_hash, created_at, expires_at
+		FROM minurls_staging
+		ON CONFLICT (url_hash) DO NOTHING;
+	`)
+	if err != nil {
+		return err
+	}
+
 	return tx.Commit(ctx)
+
+	// [24-08-2026] NOTE: Cannot use COPY for upserts because PostgreSQL's
+	// native COPY FROM command does not support ON CONFLICT clauses.
 }

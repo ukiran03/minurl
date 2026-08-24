@@ -67,6 +67,9 @@ func (app *application) createMinurlHandler(
 		}
 		// NOTE: If Bloom said true, but Redis returned nil (false positive),
 		// it proceeds to create a new entry safely.
+		//
+		// For, How we are dealing with unique constraints violations,
+		// see `PostgresStore.Copy()`
 	}
 
 	// Core Cache Miss -> Instantly generate our unique SFID & Slug
