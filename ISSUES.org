@@ -1,0 +1,41 @@
+#+STARTUP: num
+#+TITLE: Project Issues
+
+* TODO [#A] short_url is only the slug, not a full URL
+
+#+begin_src go
+app.writeJSON(w, http.StatusCreated, envelope{
+		"url":       minurl.URL,
+		"short_url": minurl.Slug,
+	}, nil)
+#+end_src
+
+Clients get "abc12X" instead of https://yourdomain.com/abc12X. Document this or
+add a configurable base URL.
+
+* TODO [#A] Empty API handlers
+
+~getMinurlHandler~ and ~deleteMinurlHandler~ are stubs but routed publicly at
+/v1/minurls/{slug}. They return empty 200 responses today — confusing for
+clients.
+
+* TODO [#B] Health check is shallow
+
+~/v1/healthcheck~ always returns ~"available"~ without pinging Postgres, Redis,
+NATS, or ClickHouse. Unsuitable for Kubernetes readiness probes.
+
+* TODO [#B] Route design footgun
+
+~GET /{slug}~ is registered before ~/v1~. ~GET /v1~ hits the redirect handler with
+slug ~"v1"~. Low risk now, but fragile as routes grow.
+
+* TODO [#C] Cache / stream inconsistency on failures
+
+| Failure point                      | Cache state | Stream state                             |
+|------------------------------------|-------------|------------------------------------------|
+| NATS publish fails after Redis put | Written     | Not queued                               |
+| JetStream full (`DiscardNew`)      | Written     | Rejected                                 |
+| Postgres flush fails               | Written     | Redelivered forever (duplicate URL case) |
+
+There is no rollback or compensating action when publish fails after cache
+write.
