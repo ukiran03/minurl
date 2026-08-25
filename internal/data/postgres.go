@@ -46,7 +46,12 @@ func (s *PostgresStore) Put(ctx context.Context, minurl *MinUrl) error {
 func (s *PostgresStore) Get(
 	ctx context.Context, minurl *MinUrl,
 ) (string, error) {
-	query := `SELECT url FROM minurls WHERE slug = $1`
+	query := `
+		SELECT url
+		FROM minurls
+		WHERE slug = $1
+		  AND (expires_at IS NULL OR expires_at > NOW())
+	`
 
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
@@ -60,6 +65,37 @@ func (s *PostgresStore) Get(
 		return "", err
 	}
 	return longURL, nil
+}
+
+// GetByHashWithAll fetches the original slug, long URL, and expiry (almost all
+// fields) using the MD5 hash.  It automatically ignores expired records.
+func (s *PostgresStore) GetByHashWithAll(
+	ctx context.Context,
+	urlHash string,
+) (int64, string, *time.Time, error) {
+	query := `
+		SELECT slug, url, expires_at
+		FROM minurls
+		WHERE url_hash = $1
+		  AND (expires_at IS NULL OR expires_at > NOW())
+	`
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+
+	var (
+		slugInt int64
+		longURL string
+		expiry  *time.Time
+	)
+
+	err := s.DB.QueryRow(ctx, query, urlHash).Scan(&slugInt, &longURL, &expiry)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, "", nil, ErrRecordNotFound
+		}
+		return 0, "", nil, err
+	}
+	return slugInt, longURL, expiry, nil
 }
 
 func (s *PostgresStore) Delete(ctx context.Context, minurl *MinUrl) error {
@@ -143,3 +179,6 @@ func (s *PostgresStore) Copy(ctx context.Context, minurls []MinUrl) error {
 	// [24-08-2026] NOTE: Cannot use COPY for upserts because PostgreSQL's
 	// native COPY FROM command does not support ON CONFLICT clauses.
 }
+
+// [25-08-2026] TODO: setup `pg_cron` background job for BATCH deleting expired
+// records, in the manifest files, to deploy on K3d (later GKE)

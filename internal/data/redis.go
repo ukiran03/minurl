@@ -31,6 +31,7 @@ func NewRedisStore(
 // atomically
 func (s *RedisStore) Put(ctx context.Context, minurl *MinUrl) error {
 	pipe := s.Rdb.TxPipeline()
+	expiry := minurl.Life.Expiry
 
 	redisKey := "minurl:" + minurl.Slug
 	data := map[string]any{
@@ -42,13 +43,11 @@ func (s *RedisStore) Put(ctx context.Context, minurl *MinUrl) error {
 
 	// Store the structural hash object
 	pipe.HSet(ctx, redisKey, data)
-	if s.TTL > 0 {
-		pipe.Expire(ctx, redisKey, s.TTL)
-	}
+	pipe.ExpireAt(ctx, redisKey, expiry)
 
 	// Create the write-path secondary inde (MD5 Hash -> Redis Key Pointer)
 	indexKey := "index:hash:" + minurl.URLHash
-	pipe.Set(ctx, indexKey, redisKey, s.TTL)
+	pipe.Set(ctx, indexKey, redisKey, time.Until(expiry))
 
 	_, err := pipe.Exec(ctx)
 	return err
@@ -103,7 +102,7 @@ func (s *RedisStore) fetchMinUrl(ctx context.Context, redisKey string) (
 func (s *RedisStore) Delete(ctx context.Context, minurl *MinUrl) error {
 	redisKey := "minurl:" + minurl.Slug
 
-	// 1. If URLHash wasn't provided, fetch it from the Hash before we destroy it
+	// If URLHash wasn't provided, fetch it from the Hash before we destroy it
 	if minurl.URLHash == "" {
 		hash, err := s.Rdb.HGet(ctx, redisKey, "url_hash").Result()
 		if errors.Is(err, redis.Nil) {
@@ -115,7 +114,7 @@ func (s *RedisStore) Delete(ctx context.Context, minurl *MinUrl) error {
 		minurl.URLHash = hash
 	}
 
-	// 2. Use an atomic pipeline to delete both keys
+	// Use an atomic pipeline to delete both keys
 	pipe := s.Rdb.TxPipeline()
 
 	pipe.Del(ctx, redisKey) // Delete primary data

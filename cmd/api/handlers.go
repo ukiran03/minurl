@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"ukiran.com/minurl/internal/data"
@@ -46,7 +47,7 @@ func (app *application) createMinurlHandler(
 
 	urlHash := getURLHash(inURL)
 
-	// Query the Bloom Filter
+	// Query the Bloom Filter (Fail-open if error occurs)
 	exists, err := app.bloom.Exists(r.Context(), urlHash)
 	if err != nil {
 		app.logger.Error("bloom filter check failed", "error", err)
@@ -54,8 +55,11 @@ func (app *application) createMinurlHandler(
 
 	if exists {
 		// Verify against Redis using our secondary index
-		storedMinUrl, err := app.models.Cache.GetByHash(r.Context(), urlHash)
-		if err == nil && storedMinUrl != nil {
+		if storedMinUrl, err := app.models.Cache.GetByHash(
+			r.Context(),
+			urlHash,
+		); err == nil &&
+			storedMinUrl != nil {
 			app.writeJSON(
 				w, http.StatusOK,
 				envelope{
@@ -65,8 +69,55 @@ func (app *application) createMinurlHandler(
 			)
 			return
 		}
-		// NOTE: If Bloom said true, but Redis returned nil (false positive),
-		// it proceeds to create a new entry safely.
+
+		// Redis miss (eviction), check Postgres. In theory only 1% of the
+		// requests will reach this end, 99% of them will be caught by the
+		// above redis check.
+		dbFlake, longURL, expiry, err := app.models.PostgresDB.GetByHashWithAll(
+			r.Context(),
+			urlHash,
+		)
+		if err == nil {
+			// convert raw Snowflake int64 to original Base62 string
+			originalSlug := flake.Flake(dbFlake).Base62()
+
+			// rehydrate the MinUrl struct to repopulate redis cache
+			var expiryVal time.Time
+			if expiry != nil {
+				expiryVal = *expiry
+			}
+			lifespan := data.Lifespan{Expiry: expiryVal}
+			rehydratedMinUrl := &data.MinUrl{
+				Flake:   dbFlake,
+				Slug:    originalSlug,
+				URL:     longURL,
+				URLHash: urlHash,
+				Life:    lifespan,
+			}
+
+			// Heal the cache asynchronously or synchronously so future reads
+			// hit redis
+			if cacheErr := app.models.Cache.Put(
+				r.Context(),
+				rehydratedMinUrl,
+			); cacheErr != nil {
+				app.logger.Error(
+					"failed to heal cache on eviction fallback",
+					"error",
+					cacheErr,
+				)
+			}
+
+			app.writeJSON(w, http.StatusOK, envelope{
+				"url":       longURL,
+				"short_url": originalSlug,
+			}, nil)
+			return
+		}
+
+		// NOTE: If Postgres returned ErrRecordNotFound, it's a true Bloom
+		// filter false positive. Proceed below to mint a brand new record
+		// safely!
 		//
 		// For, How we are dealing with unique constraints violations,
 		// see `PostgresStore.Copy()`
@@ -101,7 +152,7 @@ func (app *application) createMinurlHandler(
 	)
 	if err != nil {
 		app.logger.Error("postgres stream publish failed", "error", err)
-		// Optional: Consider rolling back or handling stale cache if publishing fails
+		// TODO: Consider rolling back or handling stale cache if publishing fails
 		app.serverErrorResponse(
 			w,
 			r,
@@ -134,25 +185,27 @@ func (app *application) redirectHandler(
 		return
 	}
 
-	// Hit Redis cache first!
-	cachedMinUrl, err := app.models.Cache.GetBySlug(r.Context(), slug)
-	if err == nil && cachedMinUrl != nil {
+	// Hit Redis Cache first
+	if cachedMinUrl, err := app.models.Cache.GetBySlug(
+		r.Context(),
+		slug,
+	); err == nil &&
+		cachedMinUrl != nil {
 		app.executeRedirect(w, r, slug, cachedMinUrl.URL)
 		return
 	}
 
-	// Fall through Postgres DB
-	var f flake.Flake
-	if f, err = flake.ParseBase62(slug); err != nil {
+	// Fall through to Postgres DB
+	f, err := flake.ParseBase62(slug)
+	if err != nil {
 		app.notFoundResponse(w, r)
 		return
 	}
 
-	minurl := &data.MinUrl{
-		Flake: int64(f),
-	}
-
-	longUrl, err := app.models.PostgresDB.Get(r.Context(), minurl)
+	longUrl, err := app.models.PostgresDB.Get(
+		r.Context(),
+		&data.MinUrl{Flake: int64(f)},
+	)
 	if err != nil {
 		if errors.Is(err, data.ErrRecordNotFound) {
 			app.notFoundResponse(w, r)
@@ -205,4 +258,32 @@ func (app *application) deleteMinurlHandler(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
+	slug := chi.URLParam(r, "slug")
+	m := &data.MinUrl{Slug: slug}
+
+	// Delete from Redis cache
+	if err := app.models.Cache.Delete(r.Context(), m); err != nil {
+		app.logger.Error("failed to delete from cache", "error", err)
+	}
+
+	// Synchronous delete or mark inactive in PostgreSQL
+	// [25-08-2026] DOUBT: via direct delete query or stream event
+	if err := app.models.PostgresDB.Delete(r.Context(), m); err != nil {
+		if errors.Is(err, data.ErrRecordNotFound) {
+			app.notFoundResponse(w, r)
+			return
+		}
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	app.writeJSON(
+		w,
+		http.StatusOK,
+		envelope{"message": "minurl deleted successfully"},
+		nil,
+	)
 }
+
+// [25-08-2026] TODO: In the envelope with "short_url", short_url is only the
+// slug, not a full URL, change it.
