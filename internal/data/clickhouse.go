@@ -42,25 +42,30 @@ func (s *ClickHouseStore) Write(
 		return err
 	}
 
-	// Ensure the batch is aborted if we exit with an error before sending
+	// Ensure the batch is cleaned, if an error occurs before Send() succeeds.
+	// A successful Send() automatically closes the batch, so we use the 'sent'
+	// flag to prevent redundant cleanup in the defer block.
+	// Prefer close-on-error-only.
+	var sent bool
 	defer func() {
-		if err := batch.Close(); err != nil {
-			s.Logger.Error("failed to close batch", "error", err)
+		if !sent {
+			if err := batch.Close(); err != nil {
+				s.Logger.Error("failed to close batch", "error", err)
+			}
 		}
 	}()
 
 	for _, event := range clickEvs {
-		err := batch.Append(
-			event.Slug,
-			event.Timestamp,
-			event.RemoteAddr,
-			event.UserAgent,
-			event.Referrer,
-		)
-		if err != nil {
+		if err := batch.AppendStruct(&event); err != nil {
 			return err
 		}
 	}
 
-	return batch.Send()
+	if err := batch.Send(); err != nil {
+		return err
+	}
+
+	// Mark as successfully sent to skip the cleanup logic in the defer func
+	sent = true
+	return nil
 }
