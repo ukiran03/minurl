@@ -20,13 +20,11 @@ func (app *application) routes() http.Handler {
 	// BRANCH 2: The API Group
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/healthcheck", app.healthcheckHandler)
-		r.Post("/shorten", app.createMinurlHandler) // -> POST /v1/shorten
+		r.Post("/shorten", app.createMinurlHandler)
 
-		// SUB-BRANCH 3: Protected URL Management
-		r.Route("/minurls/{slug}", func(r chi.Router) {
-			r.Get("/", app.getMinurlHandler)       // -> GET /v1/minurls/{slug}
-			r.Delete("/", app.deleteMinurlHandler) // -> DELETE /v1/minurls/{slug}
-		})
+		// Explicit full paths prevent trailing slash bugs
+		r.Get("/minurls/{slug}", app.getMinurlHandler)
+		r.Delete("/minurls/{slug}", app.deleteMinurlHandler)
 	})
 
 	return r
