@@ -1,7 +1,11 @@
 #+STARTUP: num
 #+TITLE: Project Issues
 
-* TODO [#A] short_url is only the slug, not a full URL
+* DONE [#A] short_url is only the slug, not a full URL
+CLOSED: [2026-08-27 Thu 22:24]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2026-08-27 Thu 22:24]
+:END:
 
 #+begin_src go
 app.writeJSON(w, http.StatusCreated, envelope{
@@ -23,15 +27,18 @@ CLOSED: [2026-08-27 Thu 21:25]
 /v1/minurls/{slug}. They return empty 200 responses today — confusing for
 clients.
 
+* DONE [#B] Route design footgun
+CLOSED: [2026-08-27 Thu 22:15]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2026-08-27 Thu 22:15]
+:END:
+
+~GET /{slug}~ is registered before ~/v1~. ~GET /v1~ hits the redirect handler with
+slug ~"v1"~. Low risk now, but fragile as routes grow.
 * TODO [#B] Health check is shallow
 
 ~/v1/healthcheck~ always returns ~"available"~ without pinging Postgres, Redis,
 NATS, or ClickHouse. Unsuitable for Kubernetes readiness probes.
-
-* TODO [#B] Route design footgun
-
-~GET /{slug}~ is registered before ~/v1~. ~GET /v1~ hits the redirect handler with
-slug ~"v1"~. Low risk now, but fragile as routes grow.
 
 * TODO [#C] Cache / stream inconsistency on failures
 

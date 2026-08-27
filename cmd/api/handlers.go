@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -60,11 +61,18 @@ func (app *application) createMinurlHandler(
 			urlHash,
 		); err == nil &&
 			storedMinUrl != nil {
+
+			fullShortURL := fmt.Sprintf(
+				"%s/%s",
+				app.config.BaseURL,
+				storedMinUrl.Slug,
+			)
+
 			app.writeJSON(
 				w, http.StatusOK,
 				envelope{
 					"url":       storedMinUrl.URL,
-					"short_url": storedMinUrl.Slug,
+					"short_url": fullShortURL,
 				}, nil,
 			)
 			return
@@ -108,9 +116,15 @@ func (app *application) createMinurlHandler(
 				)
 			}
 
+			fullShortURL := fmt.Sprintf(
+				"%s/%s",
+				app.config.BaseURL,
+				originalSlug,
+			)
+
 			app.writeJSON(w, http.StatusOK, envelope{
 				"url":       longURL,
-				"short_url": originalSlug,
+				"short_url": fullShortURL,
 			}, nil)
 			return
 		}
@@ -160,17 +174,17 @@ func (app *application) createMinurlHandler(
 		)
 		return
 	}
-	/* app.logger.Info("message persisted in stream", "stream", pubAck.Stream,
-	"seq", pubAck.Sequence) */
 
 	if err := app.bloom.Add(r.Context(), urlHash); err != nil {
 		app.logger.Error("failed to add to bloom filter", "error", err)
 	}
 
+	fullShortURL := fmt.Sprintf("%s/%s", app.config.BaseURL, minurl.Slug)
+
 	// Return 201 Created using a helper if available, or standard encoding
 	app.writeJSON(w, http.StatusCreated, envelope{
 		"url":       minurl.URL,
-		"short_url": minurl.Slug,
+		"short_url": fullShortURL,
 	}, nil)
 }
 
