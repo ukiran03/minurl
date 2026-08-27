@@ -13,7 +13,11 @@ app.writeJSON(w, http.StatusCreated, envelope{
 Clients get "abc12X" instead of https://yourdomain.com/abc12X. Document this or
 add a configurable base URL.
 
-* TODO [#A] Empty API handlers
+* DONE [#A] Empty API handlers
+CLOSED: [2026-08-27 Thu 21:25]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2026-08-27 Thu 21:25]
+:END:
 
 ~getMinurlHandler~ and ~deleteMinurlHandler~ are stubs but routed publicly at
 /v1/minurls/{slug}. They return empty 200 responses today — confusing for

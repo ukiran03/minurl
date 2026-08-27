@@ -1,9 +1,7 @@
 package data
 
 import (
-	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"ukiran.com/minurl/internal/flake"
@@ -36,6 +34,7 @@ func NewMinUrl(
 	}
 }
 
+// ClickEvent is an append-only analytics record for ClickHouse.
 type ClickEvent struct {
 	Slug       string    `json:"slug"`
 	Timestamp  time.Time `json:"timestamp"`
@@ -56,28 +55,17 @@ func NewClickEvent(slug string, r *http.Request) *ClickEvent {
 	}
 }
 
-// Helper to reliably extract the client IP
-func extractIP(r *http.Request) string {
-	// check for standard proxy headers first
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		// X-Forwarded-For can contain a comma-separated list of IPs (client,
-		// proxy1, proxy2)
-		parts := strings.Split(fwd, ",")
-		if clientIP := strings.TrimSpace(parts[0]); clientIP != "" {
-			return clientIP
-		}
-	}
+// ClickStats is a read-model summary for a slug over a time window.
+type ClickStats struct {
+	Slug         string          `json:"slug"`
+	From         time.Time       `json:"from"`
+	To           time.Time       `json:"to"`
+	TotalClicks  int64           `json:"total_clicks"`
+	TopReferrers []ReferrerCount `json:"top_referrers"`
+}
 
-	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-		return realIP
-	}
-
-	// fall back to RemoteAddr, making sure to strip the port
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		// If RemoteAddr didn't have a port for some reason, return it as-is
-		return r.RemoteAddr
-	}
-
-	return ip
+// ReferrerCount ranks referrers by click volume.
+type ReferrerCount struct {
+	Referrer string `json:"referrer"`
+	Clicks   int64  `json:"clicks"`
 }

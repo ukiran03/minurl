@@ -2,6 +2,8 @@ package data
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -68,4 +70,54 @@ func (s *ClickHouseStore) Write(
 	// Mark as successfully sent to skip the cleanup logic in the defer func
 	sent = true
 	return nil
+}
+
+func (s *ClickHouseStore) GetClickStats(
+	ctx context.Context,
+	slug string,
+	from, to time.Time,
+	limit int,
+) (*ClickStats, error) {
+	const maxLimit = 65536
+	if limit > maxLimit {
+		return nil, errors.New("limit cannot exceed 65536")
+	}
+
+	// [27-08-2026] NOTE: here the `arrayMap` is similar to
+	// Lisp's map:  `(map proc lst ...+) → list?`
+	query := fmt.Sprintf(`
+    SELECT
+        COUNT() AS total_clicks,
+        arrayMap(x -> (x.1, x.2), topK(%d)(referrer)) AS top_referrers
+    FROM url_clicks
+    WHERE slug = ? AND TIMESTAMP >= ? AND TIMESTAMP < ?
+`, limit)
+
+	stats := &ClickStats{
+		Slug:         slug,
+		From:         from,
+		To:           to,
+		TopReferrers: make([]ReferrerCount, 0, limit),
+	}
+
+	row := s.DB.QueryRow(ctx, query, slug, from, to)
+
+	// ClickHouse driver maps topK array of tuples to custom Go slices/types
+	var topRefTuples []struct {
+		Referrer string `ch:"1"`
+		Clicks   uint64 `ch:"2"`
+	}
+
+	if err := row.Scan(&stats.TotalClicks, &topRefTuples); err != nil {
+		return nil, err
+	}
+
+	for _, t := range topRefTuples {
+		stats.TopReferrers = append(stats.TopReferrers, ReferrerCount{
+			Referrer: t.Referrer,
+			Clicks:   int64(t.Clicks),
+		})
+	}
+
+	return stats, nil
 }

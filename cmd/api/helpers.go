@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type envelope map[string]any
@@ -98,6 +100,54 @@ func (app *application) readJSON(
 	err = dec.Decode(&struct{}{})
 	if !errors.Is(err, io.EOF) {
 		return errors.New("body must only contain a single JSON value")
+	}
+
+	return nil
+}
+
+// readQuery parses and maps URL query (or form) parameters into destination
+// DTO.
+//
+// NOTE: Because parameters are strictly strings, individual DTO fields require
+// specific parsing (e.g., strconv, time.Parse).
+func (app *application) readQuery(r *http.Request, dst *GetDTO) error {
+	// ParseForm populates r.Form with URL query parameters (for GET)
+	// and/or body parameters (for forms/POST later).
+	if err := r.ParseForm(); err != nil {
+		return errors.New("failed to parse request parameters")
+	}
+
+	// Use r.Form instead of r.URL.Query() to support forms later seamlessly
+	qs := r.Form
+
+	// Parse 'From' Time (Expected format: RFC3339)
+	if fromStr := qs.Get("from"); fromStr != "" {
+		parsedFrom, err := time.Parse(time.RFC3339, fromStr)
+		if err != nil {
+			return errors.New("invalid 'from' time format, use RFC3339")
+		}
+		dst.From = parsedFrom
+	}
+
+	// Parse 'To' Time
+	if toStr := qs.Get("to"); toStr != "" {
+		parsedTo, err := time.Parse(time.RFC3339, toStr)
+		if err != nil {
+			return errors.New("invalid 'to' time format, use RFC3339")
+		}
+		dst.To = parsedTo
+	}
+
+	// Parse 'Limit' Integer
+	if limitStr := qs.Get("limit"); limitStr != "" {
+		limitVal, err := strconv.Atoi(limitStr)
+		if err != nil {
+			return errors.New("invalid 'limit' value, must be an integer")
+		}
+		dst.Limit = limitVal
+	} else {
+		// Set a sensible default if limit is omitted
+		dst.Limit = 100
 	}
 
 	return nil

@@ -247,10 +247,37 @@ func (app *application) executeRedirect(
 // These handlers below will be used to retrive information/stats of minurls
 
 // GET /v1/minurls/{slug}
+// Get analytics for a specific slug
 func (app *application) getMinurlHandler(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
+	var input GetDTO
+	input.Slug = chi.URLParam(r, "slug")
+
+	if err := app.readQuery(r, &input); err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	v := validator.New()
+	if input.Validate(v); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	stats, err := app.models.ClickhouseDB.GetClickStats(
+		r.Context(), input.Slug, input.From, input.To, input.Limit,
+	)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	app.writeJSON(w, http.StatusOK, envelope{
+		"total_clicks":  stats.TotalClicks,
+		"top_referrers": stats.TopReferrers,
+	}, nil)
 }
 
 // DELETE /v1/minurls/{slug}
@@ -267,7 +294,6 @@ func (app *application) deleteMinurlHandler(
 	}
 
 	// Synchronous delete or mark inactive in PostgreSQL
-	// [25-08-2026] DOUBT: via direct delete query or stream event
 	if err := app.models.PostgresDB.Delete(r.Context(), m); err != nil {
 		if errors.Is(err, data.ErrRecordNotFound) {
 			app.notFoundResponse(w, r)
