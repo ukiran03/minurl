@@ -36,36 +36,37 @@ func NewMinUrl(
 
 // ClickEvent is an append-only analytics record for ClickHouse.
 type ClickEvent struct {
-	Slug       string    `json:"slug"`
-	Timestamp  time.Time `json:"timestamp"`
-	RemoteAddr string    `json:"remote_addr"`
-	UserAgent  string    `json:"user_agent"`
-	Referrer   string    `json:"referrer"`
+	Slug       string    `json:"slug"        ch:"slug"`
+	Timestamp  time.Time `json:"timestamp"   ch:"timestamp"`
+	RemoteAddr string    `json:"remote_addr" ch:"remote_addr"`
+	UserAgent  string    `json:"user_agent"  ch:"user_agent"`
+	Referrer   string    `json:"referrer"    ch:"referrer"`
 }
 
 func NewClickEvent(slug string, r *http.Request) *ClickEvent {
-	ip := extractIP(r)
+	remoteAddr := extractIP(r) // IP
+	referrer := sanitizeReferrer(r.Referer())
 
 	return &ClickEvent{
 		Slug:       slug,
 		Timestamp:  time.Now().UTC(),
-		RemoteAddr: ip,
+		RemoteAddr: remoteAddr,
 		UserAgent:  r.UserAgent(),
-		Referrer:   r.Referer(),
+		Referrer:   referrer,
 	}
 }
 
 // ClickStats is a read-model summary for a slug over a time window.
 type ClickStats struct {
-	Slug         string          `json:"slug"`
-	From         time.Time       `json:"from"`
-	To           time.Time       `json:"to"`
-	TotalClicks  int64           `json:"total_clicks"`
-	TopReferrers []ReferrerCount `json:"top_referrers"`
+	Slug         string          `json:"slug"          ch:"slug"`
+	From         time.Time       `json:"from"          ch:"from"`
+	To           time.Time       `json:"to"            ch:"to"`
+	TotalClicks  uint64          `json:"total_clicks"  ch:"total_clicks"`
+	TopReferrers []ReferrerCount `json:"top_referrers" ch:"top_referrers"`
 }
 
 // ReferrerCount ranks referrers by click volume.
 type ReferrerCount struct {
-	Referrer string `json:"referrer"`
-	Clicks   int64  `json:"clicks"`
+	Referrer string `json:"referrer" ch:"referrer"`
+	Clicks   uint64 `json:"clicks"   ch:"clicks"`
 }

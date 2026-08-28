@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"unicode"
 )
 
 // Helper to reliably extract the client IP
@@ -30,4 +31,20 @@ func extractIP(r *http.Request) string {
 	}
 
 	return ip
+}
+
+func sanitizeReferrer(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "Direct"
+	}
+
+	// Check for any control characters
+	for _, r := range ref {
+		if unicode.IsControl(r) {
+			return "Direct"
+		}
+	}
+
+	return ref
 }

@@ -3,7 +3,6 @@ package data
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -83,16 +82,6 @@ func (s *ClickHouseStore) GetClickStats(
 		return nil, errors.New("limit cannot exceed 65536")
 	}
 
-	// [27-08-2026] NOTE: here the `arrayMap` is similar to
-	// Lisp's map:  `(map proc lst ...+) → list?`
-	query := fmt.Sprintf(`
-    SELECT
-        COUNT() AS total_clicks,
-        arrayMap(x -> (x.1, x.2), topK(%d)(referrer)) AS top_referrers
-    FROM url_clicks
-    WHERE slug = ? AND TIMESTAMP >= ? AND TIMESTAMP < ?
-`, limit)
-
 	stats := &ClickStats{
 		Slug:         slug,
 		From:         from,
@@ -100,22 +89,48 @@ func (s *ClickHouseStore) GetClickStats(
 		TopReferrers: make([]ReferrerCount, 0, limit),
 	}
 
-	row := s.DB.QueryRow(ctx, query, slug, from, to)
-
-	// ClickHouse driver maps topK array of tuples to custom Go slices/types
-	var topRefTuples []struct {
-		Referrer string `ch:"1"`
-		Clicks   uint64 `ch:"2"`
-	}
-
-	if err := row.Scan(&stats.TotalClicks, &topRefTuples); err != nil {
+	// Get total clicks for the slug in the time range
+	totalQuery := `
+		SELECT count()
+		FROM url_clicks
+		WHERE slug = ? AND timestamp >= ? AND timestamp < ?
+	`
+	if err := s.DB.QueryRow(ctx, totalQuery, slug, from, to).
+		Scan(&stats.TotalClicks); err != nil {
 		return nil, err
 	}
 
-	for _, t := range topRefTuples {
+	// If there are no clicks, we can skip the second query
+	if stats.TotalClicks == 0 {
+		return stats, nil
+	}
+
+	// Get top referrers
+	topQuery := `
+		SELECT
+			referrer,
+			COUNT() AS count
+		FROM url_clicks
+		WHERE slug = ? AND timestamp >= ? AND timestamp < ?
+		GROUP BY referrer
+		ORDER BY count DESC
+		LIMIT ?
+	`
+	rows, err := s.DB.Query(ctx, topQuery, slug, from, to, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var ref string
+		var clicks uint64
+		if err := rows.Scan(&ref, &clicks); err != nil {
+			return nil, err
+		}
 		stats.TopReferrers = append(stats.TopReferrers, ReferrerCount{
-			Referrer: t.Referrer,
-			Clicks:   int64(t.Clicks),
+			Referrer: ref,
+			Clicks:   uint64(clicks),
 		})
 	}
 

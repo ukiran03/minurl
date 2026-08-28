@@ -289,7 +289,7 @@ func (app *application) getMinurlHandler(
 	}
 
 	app.writeJSON(w, http.StatusOK, envelope{
-		"total_clicks":  stats.TotalClicks,
+		"total_clicks":  int(stats.TotalClicks),
 		"top_referrers": stats.TopReferrers,
 	}, nil)
 }
