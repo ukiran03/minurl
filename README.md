@@ -1,117 +1,21 @@
-# MinURL - High-Performance URL Shortener with Analytics
+# MinURL
 
-A production-ready URL shortening service built with Go, featuring
-real-time analytics, distributed caching, and stream processing.
-Designed for high throughput and low latency with a focus on scalability
-and reliability.
+**High-Throughput Distributed URL Shortener with Analytics**. Built with Go,
+featuring real-time analytics via ClickHouse, multi-layer caching with Redis,
+and async stream processing with NATS JetStream.
 
-## Features
+## Core Stack & Capabilities
 
-- **URL Shortening**: Generate unique, short URLs using distributed
-  Snowflake IDs
-- **Real-time Analytics**: Track clicks, referrers, and user agents with
-  ClickHouse
-- **Distributed Caching**: Multi-layer caching with Redis and Bloom
-  filters for 99%+ cache hit rate
-- **Stream Processing**: NATS JetStream for async database writes and
-  event processing
-- **High Availability**: Batch processing with automatic retries and
-  error handling
-- **Data Deduplication**: Smart URL deduplication to prevent duplicate
-  short URLs
-- **API-First Design**: RESTful API with comprehensive validation and
-  error handling
-- **Containerized**: Docker Compose setup for local development and
-  testing
-
-## Architecture
-
-### Key Components
-
-- **API Server**: Chi router with middleware for panic recovery and
-  error handling
-- **Redis Stack**: Multi-layer caching with Bloom filters for fast
-  duplicate detection
-- **PostgreSQL**: Primary data store with connection pooling and batch
-  inserts
-- **ClickHouse**: Columnar database for high-performance analytics
-  queries
-- **NATS JetStream**: Message queue for reliable async database
-  operations
-- **Snowflake IDs**: Distributed unique ID generation for URL slugs
-
-## Tech Stack
-
-- **Language**: Go 1.26
-- **Web Framework**: Chi v5
-- **Databases**:
-  - PostgreSQL 18 (primary storage)
-  - ClickHouse (analytics)
-  - Redis Stack (caching + Bloom filters)
-- **Message Queue**: NATS with JetStream
-- **Containerization**: Docker & Docker Compose
-- **Migrations**: Goose
-- **Logging**: structured logging with slog
-
-## Prerequisites
-
-- Docker & Docker Compose
-- Go 1.26+ (for local development)
-- Make or Just (optional, for build commands)
-
-## Quick Start
-
-### Using Docker Compose (Recommended)
-
-```bash
-# Clone the repository
-git clone https://github.com/ukiran03/minurl
-cd minurl
-# Start all services
-docker compose up -d
-# Check service status
-docker compose ps
-# View logs
-docker compose logs -f app
-```
-
-The API will be available at `http://localhost:4000`
-
-### Local Development
-
-```bash
-# Install dependencies
-go mod download
-# Set environment variables
-export POSTGRES_DSN="postgres://user:pass@localhost:5432/minurl?sslmode=disable"
-export REDIS_ADDR="localhost:6379"
-export NATS_URL="nats://localhost:4222"
-export CLICKHOUSE_HOST="localhost"
-export CLICKHOUSE_DB="minurl"
-export CLICKHOUSE_USER="default"
-export SNOWFLAKE_NODE_ID="1"
-# Run the server
-go run cmd/api/main.go
-```
+- **API Server & Routing**: Built with Go, Chi router, and middleware for robust recovery, validation, and SSRF protection.
+- **Data & Caching**: PostgreSQL for primary storage, backed by a multi-layer **Redis & Bloom filter** stack achieving 99%+ cache hit rates and instant duplicate detection.
+- **Analytics Engine**: **ClickHouse** columnar database powering real-time tracking of clicks, referrers, and user agents.
+- **Async Processing**: **NATS JetStream** handling event-driven background writes and decoupled stream processing.
+- **Distributed IDs**: **Snowflake IDs** eliminating database bottlenecks for unique URL slug generation.
+- **Development-Ready**: Containerized via Docker Compose with a clean API-first design.
 
 ## API Documentation
 
 ### Create Short URL
-
-```mermaid
-flowchart TD
-    Client((Client)) -->|"POST /v1/shorten"| API
-    API -->|Check URL| Bloom{{Bloom Filter}}
-    Bloom -->|Exists| Redis[(Redis Cache)]
-    Bloom -->|Not Exists| Create[Create New URL]
-    Redis -->|Cache Hit| Return([Return Existing URL])
-    Redis -->|Cache Miss| DB[(PostgreSQL)]
-    DB -->|Found,<br>Cache Healing| Redis
-    DB -->|Not Found| Create
-    Create -->|Write to Redis| Redis
-    Create -->|Publish| NATS[[NATS JetStream]] --> PGWorker[Postgres Stream Worker] --> DB
-    Create -->|Add URL| Bloom
-```
 
 ```bash
 POST /v1/shorten
@@ -120,6 +24,21 @@ Content-Type: application/json
   "url": "https://example.com",
   "expires_at": "1w"  // optional: 1d, 1w, 1m, 1y
 }
+```
+
+```mermaid
+flowchart TD
+    Client((Client)) -->|"POST /v1/shorten"| API
+    API -->|Check URL| Bloom{{Bloom Filter}}
+    Bloom -->|Exists| Redis[(Redis Cache)]
+    Bloom -->|Not Exists| Create@{ shape: rounded, label: "Create New URL" }
+    Redis -->|Cache Hit| Return@{ shape: rounded, label: "Return Existing URL" }
+    Redis -->|Cache Miss| DB[(PostgreSQL)]
+    DB -->|Found,<br>Cache Healing| Redis
+    DB -->|Not Found| Create
+    Create -->|Write to Redis| Redis
+    Create -->|Publish| NATS@{ shape: das, label: "NATS JetStream" } --> PGWorker@{ shape: subproc, label: "Postgres Stream Worker" } --> DB
+    Create -->|Add URL| Bloom
 ```
 
 **Response:**
@@ -132,6 +51,10 @@ Content-Type: application/json
 ```
 
 ### Redirect to Original URL
+
+```bash
+GET /{slug}
+```
 
 ```mermaid
 flowchart TD
@@ -146,13 +69,13 @@ flowchart TD
     CHWorker -->|Batch Write| CH[(ClickHouse)]
 ```
 
-```bash
-GET /{slug}
-```
-
 **Response:** 302 redirect to original URL
 
 ### Get URL Analytics
+
+```bash
+GET /v1/minurls/{slug}?from=2026-08-28T07:00:00Z&to=2026-08-28T08:00:00Z&limit=100
+```
 
 ```mermaid
 flowchart LR
@@ -160,10 +83,6 @@ flowchart LR
         API3 -->|"Query Analytics"| CH[(ClickHouse)]
         CH -->|Return Stats| API3
         API3 -->|JSON Response| Client
-```
-
-```bash
-GET /v1/minurls/{slug}?from=2026-08-28T07:00:00Z&to=2026-08-28T08:00:00Z&limit=100
 ```
 
 **Response:**
@@ -180,6 +99,10 @@ GET /v1/minurls/{slug}?from=2026-08-28T07:00:00Z&to=2026-08-28T08:00:00Z&limit=1
 
 ### Delete Short URL
 
+```bash
+DELETE /v1/minurls/{slug}
+```
+
 ```mermaid
 flowchart TD
         Client@{ shape: circle, label: "Client" } -->|DELETE| API[API Server]
@@ -188,10 +111,6 @@ flowchart TD
         Redis3 -->|Success| API
         API --> DeleteResponse
         PG2 -->|Success| DeleteResponse@{ shape: rounded, label: "Delete Success Response" }
-```
-
-```bash
-DELETE /v1/minurls/{slug}
 ```
 
 **Response:**
@@ -220,7 +139,60 @@ GET /v1/healthcheck
 }
 ```
 
-## Configuration
+## Performance Optimizations
+
+1. **Multi-layer Caching**: Redis cache backed by Bloom filter pre-checks,
+   achieving a 99%+ cache hit rate and bypassing database lookups for popular
+   links.
+2. **Batch Processing**: NATS JetStream batches database writes to maximize
+   throughput and minimize database lock contention.
+3. **Async Redirection & Logging**: Non-blocking analytics publishing ensures
+   zero added latency during HTTP 302 redirects.
+4. **Connection Pooling**: Configured connection pools across PostgreSQL and
+   ClickHouse to eliminate connection churn.
+5. **Distributed ID Generation**: Snowflake IDs eliminate database round-trips
+   or auto-increment bottlenecks during slug creation.
+6. **Optimized Analytics Queries**: ClickHouse columnar storage and
+   query-splitting skip expensive operations for fast aggregation.
+
+## Tech Stack
+
+- **Language**: Go 1.26
+- **Web Framework**: Chi v5
+- **Databases**:
+  - PostgreSQL 18 (primary storage)
+  - ClickHouse (analytics)
+  - Redis Stack (caching + Bloom filters)
+- **Message Queue**: NATS with JetStream
+- **Containerization**: Docker & Docker Compose
+- **Migrations**: Goose
+- **Logging**: structured logging with slog
+
+## Prerequisites
+
+- Docker & Docker Compose
+- Go 1.26+ (for local development)
+- Make or Just (optional, for build commands)
+
+## Quick Start
+
+### Using Docker Compose
+
+```bash
+# Clone the repository
+git clone https://github.com/ukiran03/minurl
+cd minurl
+# Start all services
+docker compose up -d
+# Check service status
+docker compose ps
+# View logs
+docker compose logs -f app
+```
+
+The API will be available at `http://localhost:4000`
+
+### Configuration
 
 Configuration is handled via environment variables and command-line
 flags:
@@ -236,20 +208,6 @@ flags:
 | `SNOWFLAKE_NODE_ID` | Snowflake node ID (0-1023)   | -                     |
 | `BASE_URL`          | Base URL for short links     | http://localhost:4000 |
 
-## Performance Optimizations
-
-1.  **Multi-layer Caching**: Redis cache with Bloom filter pre-check for
-    99%+ cache hit rate
-2.  **Batch Processing**: NATS JetStream batches database writes for
-    optimal throughput
-3.  **Connection Pooling**: Configured connection pools for all database
-    connections
-4.  **Query Optimization**: Split analytics queries to skip expensive
-    operations when possible
-5.  **Async Operations**: Non-blocking analytics publishing to prevent
-    redirect latency
-6.  **Snowflake IDs**: Distributed ID generation eliminates database
-    contention
 
 ## Testing
 
@@ -262,23 +220,10 @@ go test -race ./...
 go test ./internal/flake
 ```
 
-## Monitoring & Logging
-
-- **Structured Logging**: JSON-formatted logs with contextual
-  information
-- **ClickHouse Debug Logging**: Detailed query execution logs for
-  performance analysis
-- **Health Checks**: Endpoint for container orchestration and monitoring
-- **Error Tracking**: Comprehensive error logging with request context
-
 ## Security Features
 
-- **Input Validation**: Comprehensive URL validation and sanitization
-- **SSRF Protection**: Blocks internal IP addresses and localhost
-- **Scheme Enforcement**: Only allows HTTP/HTTPS protocols
-- **Rate Limiting Ready**: Architecture supports rate limiting
-  middleware
-- **Secure Headers**: Configurable security headers
+- **Validation & SSRF Protection**: Blocks internal IPs/localhost and enforces HTTP/HTTPS schemes.
+- **Resilience Ready**: Architecture supports rate-limiting middleware and secure headers.
 
 ## Known Issues & Future Improvements
 
