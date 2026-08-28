@@ -300,7 +300,15 @@ func (app *application) deleteMinurlHandler(
 	r *http.Request,
 ) {
 	slug := chi.URLParam(r, "slug")
-	m := &data.MinUrl{Slug: slug}
+
+	// Convert slug to flake for database operations
+	f, err := flake.ParseBase62(slug)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	m := &data.MinUrl{Slug: slug, Flake: int64(f)}
 
 	// Delete from Redis cache
 	if err := app.models.Cache.Delete(r.Context(), m); err != nil {
