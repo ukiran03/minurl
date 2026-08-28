@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"sync"
@@ -227,24 +228,47 @@ func connectRedis(cfg *config.Config) (*redis.Client, error) {
 		PoolSize:     10,
 		MinIdleConns: 5,
 	}
+
+	fmt.Printf(
+		"Connecting to Redis at: [%s] with password length: %d\n",
+		cfg.RDB.Addr,
+		len(cfg.RDB.Passwd),
+	)
 	rdb := redis.NewClient(opts)
 
 	var err error
-	for range 3 {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	maxRetries := 15
+	backoff := 1 * time.Second
+
+	for i := range maxRetries {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		err = rdb.Ping(ctx).Err()
 		cancel()
 
 		if err == nil {
+			log.Println("Successfully connected to Redis Stack!")
 			return rdb, nil
 		}
-		// Wait briefly before retrying in case Redis Stack is still warming up
-		// modules
-		time.Sleep(time.Second)
+
+		log.Printf(
+			"redis not ready yet (attempt %d/%d): %v. retrying in %v...",
+			i+1,
+			maxRetries,
+			err,
+			backoff,
+		)
+
+		time.Sleep(backoff)
+
+		// Exponential backoff capped at 5 seconds
+		backoff *= 2
+		if backoff > 5*time.Second {
+			backoff = 5 * time.Second
+		}
 	}
 
 	_ = rdb.Close()
-	return nil, fmt.Errorf("redis connection failed: %w", err)
+	return nil, fmt.Errorf("redis connection failed after retries: %w", err)
 }
 
 func connectNats(cfg *config.Config) (*nats.Conn, error) {

@@ -6,6 +6,7 @@ services:
     ports:
       - "4000:4000"
     environment:
+      - BASE_URL=http://localhost:4000
       - REDIS_ADDR=minurl_redis:6379
       - NATS_URL=nats://minurl_nats:4222
       - POSTGRES_DSN=postgres://postgres:pass123@minurl_db:5432/minurl?sslmode=disable
@@ -72,7 +73,7 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_logs:/var/log/clickhouse-server
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      test: ["CMD", "clickhouse-client", "--user", "default", "--query", "SELECT 1"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -98,20 +99,19 @@ services:
         condition: service_healthy
 
   redis:
-    image: redis/redis-stack:latest
+    image: redis/redis-stack-server:latest
     restart: unless-stopped
     container_name: minurl_redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s # To give redis-stack time to fully boot up
+      retries: 15
+      start_period: 40s
 
   nats:
     image: nats:alpine
