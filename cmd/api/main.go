@@ -84,8 +84,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("nats connection error: %w", err)
 	}
-	// Close NATS connection when run() returns, AFTER wg.Wait() completes
-	defer nc.Close()
+
+	// Drain/Close NATS connection when run() returns, AFTER wg.Wait() completes
+	defer nc.Drain()
 
 	jets, err := jetstream.New(nc)
 	if err != nil {
